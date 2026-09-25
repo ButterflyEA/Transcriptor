@@ -6,11 +6,11 @@ use std::process::Command;
 const EXE: &str = env!("CARGO_BIN_EXE_whisper-burn-cli");
 
 #[test]
-#[ignore = "network + heavy: needs cached large-v3 weights"]
+#[ignore = "heavy: needs the ~2.9 GB cached large-v3 checkpoint"]
 fn large_v3_auto_matches_reference_hebrew_golden() {
     let wav = concat!(env!("CARGO_MANIFEST_DIR"), "/../../test_16000_mono.wav");
     let out = Command::new(EXE)
-        .args(["--model", "large-v3", "--device", "cpu", "--output", "json"])
+        .args(["--model", "large-v3", "--device", "wgpu", "--output", "json"])
         .arg(wav)
         .output()
         .unwrap();
