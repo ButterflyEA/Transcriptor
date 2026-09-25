@@ -22,9 +22,13 @@
 use crate::Result;
 use crate::tokenizer::whisper::TextTokenizer;
 
-/// Milliseconds per timestamp step (whisper `time_precision =
-/// hop_length / sample_rate * 1000` = 10 ms).
-pub const TIME_PRECISION_MS: u32 = 10;
+/// Milliseconds per timestamp step. The reference computes
+/// `time_precision = input_stride * HOP_LENGTH / SAMPLE_RATE` = 2 * 160 /
+/// 16000 = 0.02 s, i.e. 20 ms. Its tokenizer agrees: the timestamp specials
+/// are generated as `<|{i * 0.02:.2f}|>`, so `<|0.02|>` is one step after
+/// `<|0.00|>`. `TextTokenizer::timestamp_token` already used 0.02; this
+/// constant is the inverse mapping and had been 10, halving every timestamp.
+pub const TIME_PRECISION_MS: u32 = 20;
 
 /// A transcribed text segment with millisecond start/end times (window
 /// offsets already applied, i.e. relative to the original audio).
