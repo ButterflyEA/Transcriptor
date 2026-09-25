@@ -1,0 +1,28 @@
+[package]
+name = "whisper-burn"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = ["wgpu", "ndarray"]
+wgpu = ["burn/wgpu"]
+ndarray = ["burn/ndarray"]
+audio = ["dep:symphonia", "dep:rubato"]
+weights = ["dep:ureq"]
+
+[dependencies]
+burn.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+fancy-regex.workspace = true
+log.workspace = true
+docx-rs.workspace = true
+printpdf.workspace = true
+symphonia = { workspace = true, optional = true, features = ["all"] }
+rubato = { workspace = true, optional = true }
+ureq = { workspace = true, optional = true }
+
+[dev-dependencies]
+zip.workspace = true

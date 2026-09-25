@@ -1,22 +1,23 @@
-[package]
-name = "transcriptor"
+[workspace]
+resolver = "2"
+members = ["crates/whisper-burn", "crates/whisper-burn-cli", "crates/transcriptor/src-tauri"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-actix-cors = "0.7"
-actix-multipart = "0.7"
-actix-web = "4.11"
-anyhow = "1"
-byteorder = "1.5"
-candle-core = "0.9"
-candle-nn = "0.9"
-candle-transformers = "0.9"
-futures-util = "0.3"
-hf-hub = "0.4"
-hound = "3.5"
+[workspace.dependencies]
+burn = { version = "0.21.0", default-features = false, features = ["std"] }
+thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-tokenizers = "0.22"
+base64 = "0.23.1"
+fancy-regex = "0.19.2"
+ureq = "2"
+log = "0.4"
+clap = { version = "4", features = ["derive"] }
+symphonia = "0.6.1"
+rubato = "5.0.0"
+docx-rs = "0.3"
+printpdf = "0.8"
 zip = { version = "2", default-features = false, features = ["deflate"] }

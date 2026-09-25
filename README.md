@@ -1,43 +1,33 @@
-# Transcriptor
+# whisper-burn
 
-Transcriptor is a Rust + React app that transcribes WAV audio with Whisper running on the Candle crate.
+A from-scratch Rust implementation of [OpenAI Whisper](https://github.com/openai/whisper)
+running on [burn](https://burn.dev) — a Cargo workspace with two crates:
 
-## Stack
+- **`whisper-burn`** — the library: model definition, GGML weight loading,
+  tokenizer/BPE, log-mel, greedy & beam decoding, and full transcription
+  orchestration.
+- **`whisper-burn-cli`** — a thin command-line frontend that transcribes
+  audio files on a wgpu (GPU) or ndarray (CPU) backend.
 
-- **Backend**: Rust, `actix-web`, Candle + `candle-transformers` Whisper
-- **Frontend**: React (Vite)
+## Transcribe from the command line
 
-## Features
-
-- Upload a WAV audio file from the React UI
-- Run transcription on the Rust backend using Whisper (tiny.en)
-- Download transcription as **TXT** or **DOCX**
-
-## Run backend
-
-```bash
-cargo run
+```sh
+cargo run --release -p whisper-burn-cli -- speech.wav
 ```
 
-Backend starts on `http://localhost:8080`.
+Prints timestamped segments to stdout and can write `txt`, `srt`, `vtt`, and
+`json` transcripts next to your audio file:
 
-## Run frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
+```sh
+cargo run --release -p whisper-burn-cli -- interview.flac --model base --output srt
 ```
 
-Frontend starts on `http://localhost:5173` and calls `http://localhost:8080` by default.
+For everything else — options, examples, output formats, model downloads, and
+troubleshooting — see [**docs/usage.md**](docs/usage.md).
 
-To customize backend URL:
+## Tests
 
-```bash
-VITE_API_BASE_URL=http://localhost:8080 npm run dev
+```sh
+cargo test --workspace                # offline suite
+cargo test --workspace -- --ignored   # + network integration tests (real audio, model weights)
 ```
-
-## Notes
-
-- Whisper model files are fetched from Hugging Face on first transcription request and cached locally by `hf-hub`.
-- Current backend expects **16kHz WAV** input to match Whisper preprocessing.

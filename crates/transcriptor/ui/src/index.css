@@ -1,0 +1,20 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Ad banner marquee: slides the track by exactly half its width, so the
+     duplicated phrase loops seamlessly. Paused under prefers-reduced-motion
+     via the `motion-safe:` variant on the element. */
+  --animate-ad-marquee: ad-marquee 12s linear infinite;
+
+  @keyframes ad-marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+}
+
+html, body, #root { height: 100%; }
+body { @apply bg-slate-50 text-slate-900 antialiased; }
+.dark body { @apply bg-slate-950 text-slate-100; }

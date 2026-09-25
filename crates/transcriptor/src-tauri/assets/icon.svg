@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#2563eb"/>
+  <g fill="#ffffff" font-family="Segoe UI, sans-serif" font-weight="700" text-anchor="middle">
+    <text x="256" y="170" font-size="64">&gt;&gt;</text>
+    <text x="256" y="270" font-size="64">&gt;</text>
+    <text x="256" y="370" font-size="44">Transcriptor</text>
+  </g>
+</svg>

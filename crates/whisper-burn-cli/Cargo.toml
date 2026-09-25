@@ -1,0 +1,11 @@
+[package]
+name = "whisper-burn-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+whisper-burn = { path = "../whisper-burn", features = ["audio", "weights"] }
+burn = { workspace = true, features = ["wgpu", "ndarray"] }
+clap.workspace = true
+serde_json.workspace = true
+log.workspace = true

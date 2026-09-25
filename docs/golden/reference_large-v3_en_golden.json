@@ -1,0 +1,15 @@
+{
+  "language": "en",
+  "segments": [
+    {
+      "start": "00:00.000",
+      "end": "00:07.620",
+      "text": "Shalom, this is a recording of a few sentences in which I want to test Whisper as a translator."
+    },
+    {
+      "start": "00:07.620",
+      "end": "00:18.340",
+      "text": "I record this clip so that later I can upload it to the library on the website and test if it is possible to translate the clip."
+    }
+  ]
+}
