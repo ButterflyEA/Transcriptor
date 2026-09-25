@@ -29,6 +29,7 @@ blocked.
 | `language` dropped | The detected language is computed but never returned. See 5.3 - this needs a public API change, not just a parameter. |
 | Test reads the wrong channel | `golden_large_v3.rs:22` parses JSON from `out.stdout`, but `--output json` writes a sidecar `<audio>.json` and puts human text on stdout. It can never pass as written. |
 | Degenerate segments | 22.1 s of audio yields one segment `0.0 -> 30.0` (Whisper's padded window). Reference yields 3 segments ending at `18.640`. |
+| Timestamps are half-size | `decoding/segments.rs:27` sets `TIME_PRECISION_MS = 10`, but the reference `time_precision = input_stride * HOP_LENGTH / SAMPLE_RATE` = 0.02 s. Every assembled timestamp is currently half its correct value. Latent until the goldens actually run. |
 
 Supporting change already made: `golden_large_v3` now passes `--device wgpu`
 instead of the hardcoded `cpu`. This is the CLI default, runs on the 16 GB
@@ -80,35 +81,61 @@ reference-format timestamp-bounded assembly (`assemble_segments`,
 
 ### 5.1 Timestamp rules in the decoders
 
-Reference `whisper/decoding.py` seeds the decode with the first timestamp token
-and then alternates two restricted vocabularies:
+Reference `whisper/decoding.py` implements these as `ApplyTimestampRules`, a
+`LogitFilter` applied to the logits row **before** argmax / top-k, and applied
+**per batch element** so each beam hypothesis is masked independently. For
+hypothesis `k`, with `sampled_tokens = tokens[k, sample_begin..]`:
 
-- At a text position, the model may emit text or a timestamp token.
-- Immediately after a text token, the allowed set is **narrowed to timestamp
-  tokens only** until one is chosen, which closes the current segment.
-- The first sampled token is **forced** to the first timestamp token
-  (`<|0.00|>`), so the run always starts on a boundary.
+1. Suppress `<|notimestamps|>`.
+2. `last_was_timestamp` = last sampled token `>= timestamp_begin`;
+   `penultimate_was_timestamp` = second-to-last (true when fewer than 2
+   sampled). If `last_was_timestamp`:
+   - and `penultimate_was_timestamp` (a pair completed, so text must follow):
+     forbid everything from `timestamp_begin` up, i.e. no new timestamp yet;
+   - otherwise (pair opened, closing timestamp owed): forbid all text tokens
+     below `eot`.
+3. Timestamps must not decrease, and every segment must have non-zero length:
+   if the last sampled token was an *opening* timestamp, forbid
+   `timestamp_begin..=last`; otherwise forbid `timestamp_begin..=last+1`.
+4. At the very first sampled position (`len(tokens) == sample_begin`) forbid all
+   non-timestamp tokens, and cap the choice at
+   `timestamp_begin + max_initial_timestamp_index`.
+5. If the summed log-probability over all timestamp tokens exceeds the largest
+   log-probability among text tokens, forbid text.
+
+Two corrections to earlier assumptions in this spec, both from reading the
+reference source rather than memory:
+
+- The first token is **not** forced to `<|0.00|>`. It is *masked* to timestamps
+  only, bounded by `max_initial_timestamp` (default `1.0` s, so
+  `max_initial_timestamp_index = round(1.0 / 0.02) = 50`), and rule 5 can push
+  the model to a timestamp even mid-text.
+- Timestamps come in **adjacent pairs**, so `decoding/segments.rs:9-14` is
+  correct as written. No reconciliation needed.
 
 Changes:
 
-- `decoding/greedy.rs`: add a timestamp-rule state machine over the decode
-  loop; apply the allowed-token mask to logits **before** argmax.
-- `decoding/beam.rs`: apply the same mask **per hypothesis**, so each beam
-  candidate tracks its own text/timestamp phase. This is materially more
-  involved than the greedy case and is the highest-risk item in this design.
-- Shared helper (new `decoding/timestamp_rules.rs`) so greedy and beam cannot
-  drift apart.
+- New `decoding/timestamp_rules.rs` holding the filter, so greedy and beam
+  cannot drift apart.
+- `decoding/greedy.rs`: call it on the row before `logprob_argmax`.
+- `decoding/beam.rs`: call it per hypothesis row before `log_softmax_row`.
+- `sample_begin` is `start_len` - the prefix (sot/language/task/`<|startofprev|>`)
+  is already in `tokens` and must not count as sampled.
 
 ### 5.2 Segment assembly
 
 - Keep `push_untimestamped_fallback` for genuinely `<|notimestamps|>` runs, but
   it should become a rare path rather than the normal one.
-- **Reconcile a documented assumption.** `decoding/segments.rs:9-14` states the
-  reference emits timestamps as *adjacent pairs* surrounding each text run.
-  With the rules in 5.1 the decoder emits `t0 text t1 text t2`, i.e. one
-  boundary per text run, which is not the same shape. This must be verified
-  against a real decode and the module doc corrected to describe what the code
-  actually does.
+- The adjacent-pairs assumption in `decoding/segments.rs:9-14` is **confirmed
+  correct** against the reference source; leave it, but cite `ApplyTimestampRules`
+  so the next reader knows where the shape comes from.
+- **Fix `TIME_PRECISION_MS`.** `decoding/segments.rs:27` declares `10`, but the
+  reference computes `time_precision = input_stride * HOP_LENGTH / SAMPLE_RATE`
+  = 2 × 160 / 16000 = **0.02 s**, and `tokenizer.timestamp_token` already uses
+  `0.02`. Every timestamp from `assemble_segments` is therefore currently
+  **half** the correct value. This has stayed hidden because the goldens never
+  ran and the no-rules path produced its single segment from
+  `push_untimestamped_fallback`, which bypasses this constant.
 - Segment `end` must be clamped to real audio duration, not the padded 30 s
   window, so 22.1 s of audio cannot yield `end = 30.0`.
 
