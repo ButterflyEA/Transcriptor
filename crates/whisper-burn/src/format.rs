@@ -203,13 +203,6 @@ pub mod pdf {
     const CHARS_PER_LINE: usize = 66;
     const LINES_PER_PAGE: usize = ((PAGE_H - 2.0 * MARGIN) / LINE_MM) as usize;
 
-    /// The single line the PDF draws for a segment: like the console
-    /// `bracket_line`, RTL text is mirrored leaf-by-leaf into visual order so
-    /// the bidi-less printpdf engine renders Hebrew in the right direction.
-    pub(crate) fn pdf_line(segment: &TranscriptionSegment, include_timestamps: bool) -> String {
-        visual_order(&segment_line(segment, include_timestamps))
-    }
-
     /// A4 PDF with a title line and each segment wrapped to the page width.
     ///
     /// v1 layout is a simple char-based word wrap (fine for transcripts).
@@ -330,6 +323,31 @@ pub mod pdf {
         lines
     }
 
+    /// System font with a wide glyph coverage, or the built-in Helvetica
+    /// fallback. The only platform-touching code in the app: a candidate OS
+    /// font path list; missing files are skipped so every OS still gets a PDF.
+    fn load_font(
+        doc: &mut PdfDocument,
+        warnings: &mut Vec<PdfWarnMsg>,
+    ) -> Result<FontRef> {
+        const CANDIDATES: &[&str] = &[
+            "C:\\Windows\\Fonts\\segoeui.ttf",
+            "C:\\Windows\\Fonts\\arial.ttf",
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ];
+        for path in CANDIDATES {
+            if let Some(font) = std::fs::read(path)
+                .ok()
+                .and_then(|bytes| ParsedFont::from_bytes(&bytes, 0, warnings))
+            {
+                let id = doc.add_font(&font);
+                return Ok(FontRef::External(id));
+            }
+        }
+        Ok(FontRef::Builtin(BuiltinFont::Helvetica))
+    }
+
     #[cfg(test)]
     mod wrap_tests {
         use super::{format_pdf, wrap, CHARS_PER_LINE};
@@ -419,31 +437,6 @@ pub mod pdf {
                 "wrap must keep whole words and never split a char: {lines:?}"
             );
         }
-    }
-
-    /// System font with a wide glyph coverage, or the built-in Helvetica
-    /// fallback. The only platform-touching code in the app: a candidate OS
-    /// font path list; missing files are skipped so every OS still gets a PDF.
-    fn load_font(
-        doc: &mut PdfDocument,
-        warnings: &mut Vec<PdfWarnMsg>,
-    ) -> Result<FontRef> {
-        const CANDIDATES: &[&str] = &[
-            "C:\\Windows\\Fonts\\segoeui.ttf",
-            "C:\\Windows\\Fonts\\arial.ttf",
-            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ];
-        for path in CANDIDATES {
-            if let Some(font) = std::fs::read(path)
-                .ok()
-                .and_then(|bytes| ParsedFont::from_bytes(&bytes, 0, warnings))
-            {
-                let id = doc.add_font(&font);
-                return Ok(FontRef::External(id));
-            }
-        }
-        Ok(FontRef::Builtin(BuiltinFont::Helvetica))
     }
 }
 
