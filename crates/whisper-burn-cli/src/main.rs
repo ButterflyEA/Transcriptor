@@ -104,12 +104,17 @@ impl OutputFormat {
         }
     }
 
-    fn render(self, segments: &[whisper_burn::TranscriptionSegment]) -> String {
+    fn render(
+        self,
+        result: &whisper_burn::TranscriptionResult,
+    ) -> String {
+        let segments = &result.segments;
         match self {
             OutputFormat::Txt => output::format_txt(segments),
             OutputFormat::Srt => output::format_srt(segments),
             OutputFormat::Vtt => output::format_vtt(segments),
-            OutputFormat::Json => output::format_json(segments),
+            // only JSON carries the resolved language header
+            OutputFormat::Json => output::format_json(&result.language, segments),
         }
     }
 }
@@ -200,7 +205,7 @@ fn run(args: &Args) -> Result<()> {
 
     if let Some(format) = args.output {
         let path = args.audio.with_extension(format.extension());
-        let rendered = format.render(segments);
+        let rendered = format.render(&result);
         std::fs::write(&path, rendered).map_err(|source| Error::Io {
             path: path.clone(),
             source,

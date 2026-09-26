@@ -12,13 +12,54 @@ fn txt_is_plain_logical_lines() {
     assert_eq!(out, "שלום עולם\nhello\n");
 }
 
+/// The reference JSON is an object, not a bare array: a `language` header plus
+/// `segments`. See `docs/golden/reference_large-v3_auto_golden.json`, whose
+/// only top-level keys are `language` and `segments` and whose only segment
+/// keys are `start`, `end` and `text`.
 #[test]
-fn json_serializes_segments() {
-    let out = format_json(&[seg(0, 45000, "Hello")]);
+fn json_matches_the_reference_schema() {
+    let out = format_json(
+        "he",
+        &[seg(0, 45_000, "שלום"), seg(45_000, 48_640, "עולם")],
+    );
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(v[0]["start"], serde_json::json!(0.0));
-    assert_eq!(v[0]["end"], serde_json::json!(45.0));
-    assert_eq!(v[0]["text"], serde_json::json!("Hello"));
+
+    assert_eq!(v["language"], serde_json::json!("he"));
+    let segments = v["segments"].as_array().unwrap();
+    assert_eq!(segments.len(), 2);
+    assert_eq!(segments[0]["start"], serde_json::json!("00:00.000"));
+    assert_eq!(segments[0]["end"], serde_json::json!("00:45.000"));
+    assert_eq!(segments[0]["text"], serde_json::json!("שלום"));
+    assert_eq!(segments[1]["start"], serde_json::json!("00:45.000"));
+
+    // the segment objects carry nothing but start/end/text. Compared as a set:
+    // serde_json orders object keys alphabetically, and key order is not part
+    // of the contract - golden comparison is structural.
+    for segment in segments {
+        let mut keys: Vec<&str> = segment
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, vec!["end", "start", "text"], "unexpected keys: {keys:?}");
+    }
+}
+
+/// Timestamps are `MM:SS.mmm` with *unbounded* minutes - the golden writes
+/// `00:07.800`, not `00:00:07.800`, so there is no hours field. 75 minutes is
+/// therefore `75:00.000`.
+///
+/// This contradicts the "HH:MM:SS.mmm" shape originally written into the
+/// design doc; the committed golden is the authority, and this test exists to
+/// keep the two from drifting apart again.
+#[test]
+fn json_timestamps_are_minutes_seconds_milliseconds() {
+    let out = format_json("en", &[seg(0, 4_500_000, "long")]);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["segments"][0]["start"], serde_json::json!("00:00.000"));
+    assert_eq!(v["segments"][0]["end"], serde_json::json!("75:00.000"));
 }
 
 #[test]
