@@ -1,20 +1,22 @@
 //! Greedy temperature-0 decoding: run the decoder autoregressively, applying
 //! the reference logit filters (suppress-blank at the first step, token
-//! suppression every step), argmax each token, stop on `<|endoftext|>` or the
-//! token cap.
+//! suppression every step, timestamp rules every step), argmax each token,
+//! stop on `<|endoftext|>` or the token cap.
 //!
 //! Mirrors `whisper.decoding`: `GreedyDecoder.update` for the argmax +
 //! `log_softmax` logprob accumulation, `SuppressBlank`/`SuppressTokens` logit
 //! filters, and the `no_speech_prob` capture at the `sot` position on step 0.
 
+use crate::decoding::timestamp_rules::{DEFAULT_MAX_INITIAL_TIMESTAMP_INDEX, apply_timestamp_rules};
 use crate::model::whisper::Whisper;
-use crate::tokenizer::whisper::{control_tokens, special_ids};
+use crate::tokenizer::whisper::{TextTokenizer, control_tokens, special_ids};
 use crate::{Error, Result};
 use burn::tensor::backend::Backend;
 use burn::tensor::{Tensor, TensorData};
 
-/// `<|0.00|>`'s base token; timestamp ids sit at `timestamp_begin..`. We do not
-/// apply timestamp pairing rules yet (that arrives with task 24).
+/// `<|0.00|>`'s base token; timestamp ids sit at `timestamp_begin..`. Its
+/// siblings are governed by the timestamp rules in `timestamp_rules`, which
+/// `greedy_search` applies to every row.
 pub const BLANK: u32 = 220;
 
 /// Loop/token cap; the whisper `n_text_ctx // 2` default (448/2 = 224).
@@ -126,8 +128,9 @@ fn softmax(row: &[f32]) -> Vec<f32> {
     out
 }
 
-/// The reference greedy loop (whisper CLI, `--temperature 0`, without
-/// timestamps rules): generate into `tokens` until `<|endoftext|>` or the cap.
+/// The reference greedy loop (whisper CLI, `--temperature 0`): generate into
+/// `tokens` until `<|endoftext|>` or the cap. Logit filters run in the
+/// reference's order - suppress-blank, suppress-tokens, then timestamp rules.
 pub fn greedy_search<B: Backend>(
     whisper: &Whisper<B>,
     xa: &Tensor<B, 3>,
@@ -144,6 +147,8 @@ pub fn greedy_search<B: Backend>(
     let dev = &xa.device();
     let start_len = tokens.len();
     let budget = options.sample_len.min(options.max_tokens);
+    let tokenizer =
+        TextTokenizer::standard(whisper.dims.n_vocab as u32, whisper.dims.n_audio_ctx)?;
 
     let mut sum_logprob = 0.0f32;
     let mut no_speech_prob = f32::NAN;
@@ -182,6 +187,18 @@ pub fn greedy_search<B: Backend>(
         for &t in &suppress {
             row[t as usize] = f32::NEG_INFINITY;
         }
+
+        // The reference passes the *generated suffix* as `tokens`, never the
+        // caller-supplied prefix, so the opening rules cannot see the sot /
+        // language / task tokens. `max_initial_timestamp_index` is likewise
+        // only consulted while that suffix is empty, so passing it on every
+        // step is equivalent to the reference's step-0-only plumbing.
+        apply_timestamp_rules(
+            &mut row,
+            &tokens[start_len..],
+            &tokenizer,
+            Some(DEFAULT_MAX_INITIAL_TIMESTAMP_INDEX),
+        );
 
         let (lp, token) = logprob_argmax(&row);
         sum_logprob += lp;
