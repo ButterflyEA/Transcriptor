@@ -13,7 +13,7 @@ use whisper_burn::audio::decode::decode_to_mono_f32;
 use whisper_burn::backends::{BackendChoice, cpu_device, try_wgpu_device};
 use whisper_burn::model::whisper::Whisper;
 use whisper_burn::tokenizer::whisper::Task;
-use whisper_burn::transcribe::validate_model_task;
+use whisper_burn::transcribe::{requested_language, validate_model_task};
 use whisper_burn::{Error, ModelSize, Result, TranscriptionOptions, transcribe, validate_options};
 use whisper_burn_cli::output;
 
@@ -104,12 +104,17 @@ impl OutputFormat {
         }
     }
 
-    fn render(self, segments: &[whisper_burn::TranscriptionSegment]) -> String {
+    fn render(
+        self,
+        result: &whisper_burn::TranscriptionResult,
+    ) -> String {
+        let segments = &result.segments;
         match self {
             OutputFormat::Txt => output::format_txt(segments),
             OutputFormat::Srt => output::format_srt(segments),
             OutputFormat::Vtt => output::format_vtt(segments),
-            OutputFormat::Json => output::format_json(segments),
+            // only JSON carries the resolved language header
+            OutputFormat::Json => output::format_json(&result.language, segments),
         }
     }
 }
@@ -149,7 +154,7 @@ fn main() -> ExitCode {
 
 fn run(args: &Args) -> Result<()> {
     validate_options(&TranscriptionOptions {
-        language: args.language.clone(),
+        language: requested_language(args.language.as_deref()),
         task: args.task.into(),
         beam_size: args.beam_size,
         ..Default::default()
@@ -178,7 +183,7 @@ fn run(args: &Args) -> Result<()> {
         eprintln!("decoded {} samples @ {sample_rate} Hz", pcm.len());
     }
 
-    let segments = match choice {
+    let result = match choice {
         BackendChoice::Cpu(device) => transcribe_dev::<burn::backend::ndarray::NdArray<f32>>(
             &device,
             &pcm,
@@ -189,6 +194,7 @@ fn run(args: &Args) -> Result<()> {
             transcribe_dev::<burn::backend::wgpu::Wgpu>(&device, &pcm, sample_rate, args)?
         }
     };
+    let segments = &result.segments;
 
     let stdout = segments
         .iter()
@@ -199,7 +205,7 @@ fn run(args: &Args) -> Result<()> {
 
     if let Some(format) = args.output {
         let path = args.audio.with_extension(format.extension());
-        let rendered = format.render(&segments);
+        let rendered = format.render(&result);
         std::fs::write(&path, rendered).map_err(|source| Error::Io {
             path: path.clone(),
             source,
@@ -257,10 +263,10 @@ fn transcribe_dev<B: Backend>(
     pcm: &[f32],
     sample_rate: u32,
     args: &Args,
-) -> Result<Vec<whisper_burn::TranscriptionSegment>> {
+) -> Result<whisper_burn::TranscriptionResult> {
     let model = Whisper::<B>::from_pretrained(args.model, device.clone())?;
     let options = TranscriptionOptions {
-        language: args.language.clone(),
+        language: requested_language(args.language.as_deref()),
         task: args.task.into(),
         beam_size: args.beam_size,
         initial_prompt: args.initial_prompt.clone(),

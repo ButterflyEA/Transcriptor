@@ -15,13 +15,14 @@
 use std::cmp::Ordering;
 
 use crate::model::whisper::Whisper;
-use crate::tokenizer::whisper::special_ids;
+use crate::tokenizer::whisper::{TextTokenizer, special_ids};
 use crate::{Error, Result};
 use burn::tensor::backend::Backend;
 use burn::tensor::{Tensor, TensorData};
 
 use super::greedy::resolve_suppression;
 use super::greedy::{BLANK, DEFAULT_SAMPLE_LEN};
+use super::timestamp_rules::{DEFAULT_MAX_INITIAL_TIMESTAMP_INDEX, apply_timestamp_rules};
 
 /// Beam search decoding options. Defaults match the whisper CLI
 /// (`beam_size=5`, `patience=1.0`, `suppress_blank=True`,
@@ -249,6 +250,8 @@ pub fn beam_search<B: Backend>(
     let max_candidates = ((beam_size as f32) * patience).round().max(1.0) as usize;
     let n_ctx = whisper.dims.n_text_ctx;
     let budget = options.max_tokens.max(1);
+    let tokenizer =
+        TextTokenizer::standard(whisper.dims.n_vocab as u32, whisper.dims.n_audio_ctx)?;
 
     let start_len = tokens.len();
     let prefix = tokens.clone();
@@ -309,6 +312,19 @@ pub fn beam_search<B: Backend>(
             for &t in &suppress {
                 row[t as usize] = f32::NEG_INFINITY;
             }
+
+            // Timestamp rules run per hypothesis, on that hypothesis's own
+            // generated suffix, before log_softmax - the reference applies its
+            // logit filters to logits and only then scores candidates. Sharing
+            // one filtered row across beams would let a hypothesis constrain
+            // its competitors.
+            apply_timestamp_rules(
+                &mut row,
+                &beam.tokens[start_len..],
+                &tokenizer,
+                Some(DEFAULT_MAX_INITIAL_TIMESTAMP_INDEX),
+            );
+
             step_logprobs.push(log_softmax_row(&row));
         }
 

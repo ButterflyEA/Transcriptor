@@ -1,4 +1,7 @@
-#![cfg(all(feature = "ndarray", feature = "weights"))]
+#![cfg(feature = "ndarray")]
+
+#[allow(dead_code)]
+mod common;
 
 use burn::backend::ndarray::{NdArray, NdArrayDevice};
 use burn::tensor::{Tensor, TensorData};
@@ -8,12 +11,27 @@ use whisper_burn::decoding::greedy::{GreedyOptions, greedy_search};
 use whisper_burn::features::mel::FeatureExtractor;
 use whisper_burn::features::window::split_chunks;
 use whisper_burn::model::whisper::Whisper;
-use whisper_burn::tokenizer::whisper::{
-    EOT, NOSPEECH, SOT, STARTOFLM, STARTOPREV, TRANSCRIBE, TRANSLATE,
-};
+use whisper_burn::tokenizer::whisper::{EOT, SOT, TIMESTAMP_BEGIN, TRANSCRIBE};
+#[cfg(feature = "weights")]
+use whisper_burn::tokenizer::whisper::{NOSPEECH, STARTOFLM, STARTOPREV, TRANSLATE};
 
 type B = NdArray<f32>;
 
+fn fake_silence_features(w: &Whisper<B>, dev: &NdArrayDevice) -> Tensor<B, 3> {
+    let fe = FeatureExtractor::new(w.dims.n_mels, 16000).unwrap();
+    let pcm = vec![0.0f32; 480_000];
+    let chunks = split_chunks(&pcm);
+    let mel = fe.log_mel(&chunks[0].0).unwrap();
+    w.forward_encoder(Tensor::from_data(
+        TensorData::new(mel, [1, w.dims.n_mels, 3000]),
+        dev,
+    ))
+}
+
+// Downloads a real checkpoint, so it needs the `weights` (ureq) feature on
+// top of being `#[ignore]`d. The offline test below loads a fake checkpoint
+// from disk and must stay runnable without it.
+#[cfg(feature = "weights")]
 fn silence_features() -> (
     whisper_burn::model::whisper::Whisper<NdArray<f32>>,
     Tensor<NdArray<f32>, 3>,
@@ -38,8 +56,69 @@ fn trim_eot(mut tokens: Vec<u32>) -> Vec<u32> {
     tokens
 }
 
+/// The fake checkpoint is all zeros, so the decoder emits a flat logits row,
+/// where the reference's fifth rule forces a timestamp. Unwired, the beam
+/// would instead expand on the lowest text ids.
+///
+/// Two things are checked: the rules actually reach the beam, and they reach
+/// it *per hypothesis* - with `beam_size = 1` the beam must reproduce greedy
+/// token for token, since both apply the same filters and then take the argmax.
+#[test]
+fn timestamp_rules_are_applied_per_hypothesis_in_beam_decoding() {
+    let tmp = std::env::temp_dir().join(format!("wburn_beam_ts_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    common::write_fake_checkpoint(ModelSize::Tiny, &tmp);
+    let dev = NdArrayDevice::default();
+    let w = Whisper::<B>::load(ModelSize::Tiny, &tmp, dev).unwrap();
+    let xa = fake_silence_features(&w, &dev);
+
+    let mut beam_tokens = vec![SOT, TRANSCRIBE];
+    let beam_opts = BeamOptions {
+        beam_size: 1,
+        max_tokens: 8,
+        ..Default::default()
+    };
+    beam_search(&w, &xa, &mut beam_tokens, &beam_opts).unwrap();
+
+    let mut greedy_tokens = vec![SOT, TRANSCRIBE];
+    let greedy_opts = GreedyOptions {
+        max_tokens: 8,
+        sample_len: 8,
+        ..Default::default()
+    };
+    greedy_search(&w, &xa, &mut greedy_tokens, &greedy_opts).unwrap();
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // rule 4: first generated token is a timestamp within the 1.0s cap
+    let generated = trim_eot(beam_tokens[2..].to_vec());
+    let first = generated[0];
+    assert!(
+        (TIMESTAMP_BEGIN..TIMESTAMP_BEGIN + 51).contains(&first),
+        "first generated token must be a timestamp <= 1.00s, got {first}"
+    );
+
+    // rule 3: timestamps never decrease
+    let stamps: Vec<u32> = generated
+        .iter()
+        .copied()
+        .filter(|&t| t >= TIMESTAMP_BEGIN)
+        .collect();
+    assert!(
+        stamps.windows(2).all(|w| w[0] <= w[1]),
+        "timestamps decreased: {stamps:?}"
+    );
+
+    // beam_size 1 must agree with greedy, modulo the trailing eot convention
+    assert_eq!(
+        trim_eot(beam_tokens.clone()),
+        trim_eot(greedy_tokens.clone()),
+        "beam 1 diverged from greedy"
+    );
+}
+
 #[test]
 #[ignore = "network"]
+#[cfg(feature = "weights")]
 fn beam_one_matches_greedy_on_silence() {
     let (w, xa) = silence_features();
 
@@ -87,6 +166,7 @@ fn beam_one_matches_greedy_on_silence() {
 
 #[test]
 #[ignore = "network"]
+#[cfg(feature = "weights")]
 fn beam_two_keeps_k_hypotheses_on_silence() {
     let (w, xa) = silence_features();
 

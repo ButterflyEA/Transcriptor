@@ -17,7 +17,6 @@ fn tone_padded_30s() -> Vec<f32> {
 }
 
 #[test]
-#[ignore = "network (downloads tiny weights) + golden files"]
 fn golden_encoder_matches_reference() {
     let device = NdArrayDevice::default();
     let w = Whisper::<NdArray<f32>>::from_pretrained(ModelSize::Tiny, device).unwrap();

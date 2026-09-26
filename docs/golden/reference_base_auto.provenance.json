@@ -1,0 +1,19 @@
+{
+  "model": "base",
+  "requested_language": "auto",
+  "resolved_language": "he",
+  "beam_size": 5,
+  "temperature": 0.0,
+  "logprob_threshold": -1.0,
+  "no_speech_threshold": 0.6,
+  "compression_ratio_threshold": 2.4,
+  "condition_on_previous_text": true,
+  "audio": "test_16000_mono.wav",
+  "audio_duration_s": 22.103125,
+  "segments": 1,
+  "leading_space_stripped": true,
+  "torch": "2.14.0+cpu",
+  "whisper": "20250625",
+  "python": "3.11.9",
+  "cuda": false
+}

@@ -1,4 +1,7 @@
-#![cfg(all(feature = "ndarray", feature = "weights"))]
+#![cfg(feature = "ndarray")]
+
+#[allow(dead_code)]
+mod common;
 
 use burn::backend::ndarray::{NdArray, NdArrayDevice};
 use burn::tensor::{Tensor, TensorData};
@@ -7,12 +10,16 @@ use whisper_burn::decoding::greedy::{GreedyOptions, greedy_search, resolve_suppr
 use whisper_burn::features::mel::FeatureExtractor;
 use whisper_burn::features::window::split_chunks;
 use whisper_burn::model::whisper::Whisper;
-use whisper_burn::tokenizer::whisper::{
-    EOT, NOSPEECH, SOT, STARTOFLM, STARTOPREV, TRANSCRIBE, TRANSLATE,
-};
+use whisper_burn::tokenizer::whisper::{EOT, SOT, TIMESTAMP_BEGIN, TRANSCRIBE};
+#[cfg(feature = "weights")]
+use whisper_burn::tokenizer::whisper::{NOSPEECH, STARTOFLM, STARTOPREV, TRANSLATE};
 
 type B = NdArray<f32>;
 
+// Downloads a real checkpoint, so it needs the `weights` (ureq) feature on
+// top of being `#[ignore]`d. The offline tests below load a fake checkpoint
+// from disk and must stay runnable without it.
+#[cfg(feature = "weights")]
 fn silence_features() -> (
     whisper_burn::model::whisper::Whisper<NdArray<f32>>,
     Tensor<NdArray<f32>, 3>,
@@ -28,6 +35,87 @@ fn silence_features() -> (
         &dev,
     ));
     (w, xa)
+}
+
+fn fake_silence_features(w: &Whisper<B>, dev: &NdArrayDevice) -> Tensor<B, 3> {
+    let fe = FeatureExtractor::new(w.dims.n_mels, 16000).unwrap();
+    let pcm = vec![0.0f32; 480_000];
+    let chunks = split_chunks(&pcm);
+    let mel = fe.log_mel(&chunks[0].0).unwrap();
+    w.forward_encoder(Tensor::from_data(
+        TensorData::new(mel, [1, w.dims.n_mels, 3000]),
+        dev,
+    ))
+}
+
+/// The fake checkpoint is all zeros, so the decoder emits a flat logits row.
+/// On a flat row the reference's fifth rule decides: the summed
+/// log-probability of all ~1500 timestamp tokens beats any single text token,
+/// so text is suppressed and a timestamp is forced. Unwired, argmax would
+/// return the lowest surviving text id instead.
+#[test]
+fn timestamp_rules_are_applied_during_greedy_decoding() {
+    let tmp = std::env::temp_dir().join(format!("wburn_greedy_ts_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    common::write_fake_checkpoint(ModelSize::Tiny, &tmp);
+    let dev = NdArrayDevice::default();
+    let w = Whisper::<B>::load(ModelSize::Tiny, &tmp, dev).unwrap();
+    let xa = fake_silence_features(&w, &dev);
+
+    let mut tokens = vec![SOT, TRANSCRIBE];
+    let opts = GreedyOptions {
+        max_tokens: 8,
+        sample_len: 8,
+        ..Default::default()
+    };
+    greedy_search(&w, &xa, &mut tokens, &opts).unwrap();
+    let sampled = &tokens[2..];
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // rule 4: the first generated token must be a timestamp, capped at 1.0 s
+    let first = sampled[0];
+    assert!(
+        (TIMESTAMP_BEGIN..TIMESTAMP_BEGIN + 51).contains(&first),
+        "first generated token must be a timestamp <= 1.00s, got {first}"
+    );
+
+    // rule 2: a lone timestamp reads as a closed pair, so text does follow
+    assert!(
+        sampled.iter().any(|&t| t < TIMESTAMP_BEGIN),
+        "text must not be permanently suppressed: {sampled:?}"
+    );
+    // Adjacent timestamps are legal and are how a pair closes - that is the
+    // ts/text/ts/ts/text rhythm `assemble_segments` pairs positionally. What
+    // rule 2 forbids is text in either illegal slot:
+    //   * a closed pair (ts, ts) must be followed by text;
+    //   * an open pair (text, ts) must be closed by a timestamp.
+    for i in 2..sampled.len() {
+        if sampled[i - 2] >= TIMESTAMP_BEGIN && sampled[i - 1] >= TIMESTAMP_BEGIN {
+            assert!(
+                sampled[i] < TIMESTAMP_BEGIN,
+                "closed pair must be followed by text: {sampled:?}"
+            );
+        }
+    }
+    for i in 1..sampled.len().saturating_sub(1) {
+        if sampled[i - 1] < TIMESTAMP_BEGIN && sampled[i] >= TIMESTAMP_BEGIN {
+            assert!(
+                sampled[i + 1] >= TIMESTAMP_BEGIN,
+                "an open pair must be closed by a timestamp: {sampled:?}"
+            );
+        }
+    }
+
+    // rule 3: timestamps never decrease
+    let stamps: Vec<u32> = sampled
+        .iter()
+        .copied()
+        .filter(|&t| t >= TIMESTAMP_BEGIN)
+        .collect();
+    assert!(
+        stamps.windows(2).all(|w| w[0] <= w[1]),
+        "timestamps decreased: {stamps:?}"
+    );
 }
 
 #[test]
@@ -59,6 +147,7 @@ fn suppression_default_blocks_control_tokens() {
 
 #[test]
 #[ignore = "network"]
+#[cfg(feature = "weights")]
 fn greedy_silence_decodes_real_tokens() {
     let (w, xa) = silence_features();
 

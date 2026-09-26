@@ -66,14 +66,15 @@ And so";
 }
 
 #[test]
-fn json_renders_seconds_and_text() {
+fn json_renders_the_reference_schema() {
     let segs = [seg(0, 500, "hello")];
-    let s = output::format_json(&segs);
+    let s = output::format_json("en", &segs);
     let v: serde_json::Value = serde_json::from_str(&s).expect("json parses");
-    let arr = v.as_array().expect("json is an array");
+    assert_eq!(v["language"], serde_json::json!("en"));
+    let arr = v["segments"].as_array().expect("json has a segments array");
     assert_eq!(arr.len(), 1);
-    assert_eq!(arr[0]["start"], serde_json::json!(0.0));
-    assert_eq!(arr[0]["end"], serde_json::json!(0.5));
+    assert_eq!(arr[0]["start"], serde_json::json!("00:00.000"));
+    assert_eq!(arr[0]["end"], serde_json::json!("00:00.500"));
     assert_eq!(arr[0]["text"], serde_json::json!("hello"));
 }
 
@@ -131,7 +132,7 @@ fn file_outputs_keep_hebrew_in_logical_order_without_marks() {
 #[test]
 fn json_keeps_raw_text_without_direction_marks() {
     let segs = [seg(0, 500, "שלום")];
-    let s = output::format_json(&segs);
+    let s = output::format_json("en", &segs);
     assert!(
         !s.contains('\u{200f}'),
         "json must be pure data (no direction marks): {s:?}"

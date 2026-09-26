@@ -7,7 +7,7 @@ use whisper_burn::audio::decode::decode_to_mono_f32;
 use whisper_burn::backends::{BackendChoice, cpu_device, try_wgpu_device};
 use whisper_burn::model::whisper::Whisper;
 use whisper_burn::transcribe::{ProgressCallback, ProgressUpdate, StageKind, transcribe as burn_transcribe};
-use whisper_burn::{ModelSize, TranscriptionSegment};
+use whisper_burn::{ModelSize, TranscriptionResult};
 
 use crate::core::{
     DoneDto, ProgressDto, SegmentDto, TranscribeParams, parse_task, render, validate_params,
@@ -118,7 +118,15 @@ fn save_transcript_direct(
     if segments.is_empty() {
         return Err(AppError::new("no-transcript", "nothing to save yet — transcribe first"));
     }
-    let bytes = render(&request.format, request.include_timestamps, &segments)?;
+    // Falls back to the resolved language of the kept run; "en" only if state
+    // was populated by something other than a finished pipeline.
+    let language = state.language().unwrap_or_else(|| "en".to_string());
+    let bytes = render(
+        &request.format,
+        request.include_timestamps,
+        &language,
+        &segments,
+    )?;
     std::fs::write(&request.path, bytes)
         .map_err(|e| AppError::new("io", format!("cannot write file: {e}")))?;
     Ok(std::path::PathBuf::from(&request.path))
@@ -126,7 +134,7 @@ fn save_transcript_direct(
 
 fn run_pipeline(app: AppHandle, state: &AppState, path: String, params: TranscribeParams) {
     let done = match core_run(&app, state, &path, &params) {
-        Ok(segments) => finish_run(state, segments),
+        Ok(result) => finish_run(state, result),
         Err(e) => DoneDto {
             status: "error".into(),
             segments: vec![],
@@ -137,12 +145,13 @@ fn run_pipeline(app: AppHandle, state: &AppState, path: String, params: Transcri
     let _ = app.emit("done", done);
 }
 
-fn finish_run(state: &AppState, segments: Vec<TranscriptionSegment>) -> DoneDto {
+fn finish_run(state: &AppState, result: TranscriptionResult) -> DoneDto {
     let cancelled = state.cancel.load(Ordering::SeqCst);
-    *state.last_segments.lock().unwrap() = Some(segments.clone());
+    *state.last_language.lock().unwrap() = Some(result.language);
+    *state.last_segments.lock().unwrap() = Some(result.segments.clone());
     DoneDto {
         status: if cancelled { "cancelled".into() } else { "finished".into() },
-        segments: segments.iter().map(SegmentDto::from).collect(),
+        segments: result.segments.iter().map(SegmentDto::from).collect(),
         message: if cancelled { Some("stopped by user".into()) } else { None },
     }
 }
@@ -152,7 +161,7 @@ fn core_run(
     state: &AppState,
     path: &str,
     params: &TranscribeParams,
-) -> std::result::Result<Vec<TranscriptionSegment>, AppError> {
+) -> std::result::Result<TranscriptionResult, AppError> {
     let model = ModelSize::parse(&params.model)?;
     let task = parse_task(&params.task)?;
     validate_params(model, task)?;
@@ -191,7 +200,7 @@ fn run_backend<B: burn::tensor::backend::Backend>(
     pcm: &[f32],
     sample_rate: u32,
     options: &whisper_burn::TranscriptionOptions,
-) -> std::result::Result<Vec<TranscriptionSegment>, AppError> {
+) -> std::result::Result<TranscriptionResult, AppError> {
     emit_stage(app, "weights", format!("loading {model}"), None);
     let whisper = Whisper::<B>::from_pretrained_with_progress(
         model,
@@ -200,6 +209,9 @@ fn run_backend<B: burn::tensor::backend::Backend>(
     )
     .map_err(AppError::from)?;
     emit_stage(app, "weights", format!("{model} ready"), None);
+    // The full result travels back so the RESOLVED language reaches the JSON
+    // export. Echoing the requested language would mislabel every run made
+    // with the GUI's "auto" detection.
     burn_transcribe(&whisper, pcm, sample_rate, options).map_err(AppError::from)
 }
 
@@ -250,6 +262,7 @@ fn emit_stage(app: &AppHandle, kind: &str, message: impl Into<String>, fraction:
 #[cfg(test)]
 mod tests {
     use super::*;
+use whisper_burn::TranscriptionSegment;
 
     #[test]
     fn defaults_serialize_as_camel_case() {
@@ -288,15 +301,17 @@ mod tests {
     }
 
     #[test]
-    fn finished_run_stores_segments_for_save() {
+    fn finished_run_stores_segments_and_language_for_save() {
         let state = AppState::default();
         let segs = vec![
             TranscriptionSegment { start: 0, end: 2500, text: "hello".into() },
             TranscriptionSegment { start: 2500, end: 5000, text: "world".into() },
         ];
-        let dto = finish_run(&state, segs);
+        let dto = finish_run(&state, TranscriptionResult { language: "he".into(), segments: segs });
         assert_eq!(dto.status, "finished");
         assert_eq!(state.snapshot().len(), 2);
+        // the resolved language, not the requested one, is what gets saved
+        assert_eq!(state.language().as_deref(), Some("he"));
 
         let request = SaveRequest {
             path: std::env::temp_dir().join("transcriptor_save_test.docx").to_string_lossy().into_owned(),
@@ -306,5 +321,33 @@ mod tests {
         let out = save_transcript_direct(&state, &request).expect("save after completed run must succeed");
         assert!(std::fs::metadata(&out).is_ok());
         let _ = std::fs::remove_file(&out);
+    }
+
+    /// The GUI offers "auto" detection, so a JSON export must carry the
+    /// language the audio was actually decoded in - not the requested one.
+    #[test]
+    fn saved_json_carries_the_resolved_language() {
+        let state = AppState::default();
+        finish_run(
+            &state,
+            TranscriptionResult {
+                language: "he".into(),
+                segments: vec![TranscriptionSegment { start: 0, end: 500, text: "shalom".into() }],
+            },
+        );
+
+        let path = std::env::temp_dir().join("transcriptor_save_test_lang.json");
+        let request = SaveRequest {
+            path: path.to_string_lossy().into_owned(),
+            format: "json".into(),
+            include_timestamps: false,
+        };
+        save_transcript_direct(&state, &request).expect("json save must succeed");
+
+        let written = std::fs::read_to_string(&path).expect("saved json readable");
+        let v: serde_json::Value = serde_json::from_str(&written).expect("saved json parses");
+        assert_eq!(v["language"], serde_json::json!("he"));
+        assert_eq!(v["segments"][0]["end"], serde_json::json!("00:00.500"));
+        let _ = std::fs::remove_file(&path);
     }
 }

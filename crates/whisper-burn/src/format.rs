@@ -62,7 +62,11 @@ pub fn srt_time(ms: u32) -> String {
     format!("{h:02}:{m:02}:{s:02},{ms:03}")
 }
 
-/// `MM:SS.mmm` — WebVTT cue timings and console brackets.
+/// `MM:SS.mmm` for the reference JSON writer (and WebVTT cues / console
+/// brackets).
+///
+/// Minutes are *unbounded*: 75 minutes renders `75:00.000`. The reference
+/// golden uses this two-field shape (`00:07.800`), not `HH:MM:SS.mmm`.
 pub fn vtt_time(ms: u32) -> String {
     let (ms, s) = (ms % 1000, ms / 1000);
     let (s, m) = (s % 60, s / 60);
@@ -129,22 +133,33 @@ pub fn format_vtt(segments: &[TranscriptionSegment]) -> String {
     lines.join("\n")
 }
 
-/// JSON array of `{ "start", "end", "text" }` objects, with times in seconds.
+/// The reference JSON: an object with a `language` header and a `segments`
+/// array whose entries carry `MM:SS.mmm` string timings.
 ///
-/// Leaner than the reference schema (which also carries per-token details v1
-/// does not expose), but the shape and units match.
-pub fn format_json(segments: &[TranscriptionSegment]) -> String {
+/// ```json
+/// {"language":"he","segments":[{"start":"00:00.000","end":"00:07.800","text":"..."}]}
+/// ```
+///
+/// This is deliberately minimal. It matches the committed golden's key set
+/// exactly (`language`, `segments` / `start`, `end`, `text`) and nothing more;
+/// earlier versions emitted a bare array with numeric seconds, which matched
+/// neither.
+pub fn format_json(language: &str, segments: &[TranscriptionSegment]) -> String {
     let arr: Vec<Value> = segments
         .iter()
         .map(|segment| {
             json!({
-                "start": segment.start as f64 / 1000.0,
-                "end": segment.end as f64 / 1000.0,
+                "start": vtt_time(segment.start),
+                "end": vtt_time(segment.end),
                 "text": segment.text,
             })
         })
         .collect();
-    serde_json::to_string(&Value::Array(arr)).expect("segment json serialization")
+    let value = json!({
+        "language": language,
+        "segments": Value::Array(arr),
+    });
+    serde_json::to_string(&value).expect("transcription json serialization")
 }
 
 /// Rendered line used by both the docx and pdf exporters: the segment text

@@ -2,7 +2,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use whisper_burn::format::{format_docx, format_json, format_srt, format_txt, format_vtt};
 use whisper_burn::tokenizer::whisper::Task;
-use whisper_burn::transcribe::{ProgressCallback, TranscriptionOptions, validate_model_task, validate_options};
+use whisper_burn::transcribe::{
+    ProgressCallback, TranscriptionOptions, requested_language, validate_model_task,
+    validate_options,
+};
 use whisper_burn::{ModelSize, TranscriptionSegment};
 
 use crate::error::AppError;
@@ -60,13 +63,14 @@ pub fn parse_task(s: &str) -> Result<Task, AppError> {
 pub fn render(
     format: &str,
     include_timestamps: bool,
+    language: &str,
     segments: &[TranscriptionSegment],
 ) -> Result<Vec<u8>, AppError> {
     match format {
         "txt" => Ok(format_txt(segments).into_bytes()),
         "srt" => Ok(format_srt(segments).into_bytes()),
         "vtt" => Ok(format_vtt(segments).into_bytes()),
-        "json" => Ok(format_json(segments).into_bytes()),
+        "json" => Ok(format_json(language, segments).into_bytes()),
         "docx" => format_docx(segments, include_timestamps).map_err(Into::into),
         other => Err(AppError::new("format", format!("unsupported format {other:?}"))),
     }
@@ -85,7 +89,7 @@ impl TranscribeParams {
         let task = parse_task(&self.task)?;
         let model = ModelSize::parse(&self.model)?;
         validate_params(model, task)?;
-        let language = self.language.filter(|l| l != "auto");
+        let language = requested_language(self.language.as_deref());
         let initial_prompt = self.initial_prompt.filter(|p| !p.trim().is_empty());
         let options = TranscriptionOptions {
             language,
@@ -116,10 +120,10 @@ mod tests {
     fn render_every_format_produces_bytes() {
         let segs = segs();
         for format in ["txt", "srt", "vtt", "json", "docx"] {
-            let out = render(format, true, &segs).unwrap_or_else(|e| panic!("{format}: {e}"));
+            let out = render(format, true, "en", &segs).unwrap_or_else(|e| panic!("{format}: {e}"));
             assert!(!out.is_empty(), "{format} empty");
         }
-        let txt = render("txt", false, &segs).unwrap();
+        let txt = render("txt", false, "en", &segs).unwrap();
         assert!(String::from_utf8_lossy(&txt).contains("שלום עולם"));
     }
 
@@ -138,7 +142,7 @@ mod tests {
 
     #[test]
     fn docx_render_includes_timestamp_brackets() {
-        let out = render("docx", true, &segs()).unwrap();
+        let out = render("docx", true, "en", &segs()).unwrap();
         assert!(out.len() > 100);
     }
 
@@ -161,15 +165,15 @@ mod tests {
     #[test]
     fn render_formats_match_extension_content_rules() {
         let segs = segs();
-        let txt = String::from_utf8(render("txt", true, &segs).unwrap()).unwrap();
+        let txt = String::from_utf8(render("txt", true, "en", &segs).unwrap()).unwrap();
         assert!(txt.contains("שלום עולם"));
-        let json = String::from_utf8(render("json", false, &segs).unwrap()).unwrap();
+        let json = String::from_utf8(render("json", false, "en", &segs).unwrap()).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v.as_array().map(|a| a.len()), Some(2));
-        assert!(render("docx", true, &segs).unwrap().len() > 100);
+        assert_eq!(v["segments"].as_array().map(|a| a.len()), Some(2));
+        assert!(render("docx", true, "en", &segs).unwrap().len() > 100);
         // PDF saving is disabled app-wide until the RTL rendering is fixed:
         // the backend rejects it just like any unknown format.
-        assert!(render("pdf", true, &segs).is_err());
-        assert!(render("nope", true, &segs).is_err());
+        assert!(render("pdf", true, "en", &segs).is_err());
+        assert!(render("nope", true, "en", &segs).is_err());
     }
 }

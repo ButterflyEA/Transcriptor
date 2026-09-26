@@ -25,6 +25,7 @@ use crate::audio::resample::resample_to_16k;
 use crate::decoding::beam::{BeamOptions, beam_search};
 use crate::decoding::greedy::{GreedyOptions, greedy_search};
 use crate::decoding::{assemble_segments, detect_language};
+use crate::decoding::segments::decode_segment_text;
 use crate::features::mel::FeatureExtractor;
 use crate::features::window::{N_FRAMES, split_chunks};
 use crate::model::whisper::Whisper;
@@ -39,6 +40,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The segments `transcribe` returns: millisecond start/end plus decoded text.
 pub use crate::decoding::segments::Segment as TranscriptionSegment;
+
+/// What `transcribe` hands back: the decoded segments plus the language they
+/// were decoded in.
+///
+/// The language is the *resolved* one, not the requested one. When
+/// `TranscriptionOptions::language` is `None` it comes from one-shot detection
+/// on the first window, so it has to travel with the result; the JSON writer
+/// emits it as a header field. A caller that echoes the requested language
+/// back would report `"en"` for Hebrew audio.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranscriptionResult {
+    /// Resolved spoken language, as an ISO 639-1 code (`"he"`, `"en"`, ...).
+    pub language: String,
+    /// Decoded segments in order, in milliseconds from the start of the audio.
+    pub segments: Vec<TranscriptionSegment>,
+}
 
 /// Pipeline stages surfaced to UIs via the progress callback. `Download`
 /// carries a completion `fraction` when the total size is known.
@@ -227,7 +244,7 @@ pub fn push_untimestamped_fallback(
     if text_tokens.is_empty() {
         return Ok(());
     }
-    let text = tokenizer.decode(&text_tokens)?;
+    let text = decode_segment_text(tokenizer, &text_tokens)?;
     if text.trim().is_empty() {
         return Ok(());
     }
@@ -241,36 +258,39 @@ pub fn push_untimestamped_fallback(
 
 /// Transcribe raw PCM into timestamped segments. `sample_rate` is the PCM's
 /// rate; anything but 16 kHz is resampled (requires the `audio` feature).
+///
+/// Returns the resolved language alongside the segments; see
+/// [`TranscriptionResult`].
 pub fn transcribe<B: Backend>(
     whisper: &Whisper<B>,
     pcm: &[f32],
     sample_rate: u32,
     options: &TranscriptionOptions,
-) -> Result<Vec<TranscriptionSegment>> {
+) -> Result<TranscriptionResult> {
     validate_options(options)?;
     let tokenizer = TextTokenizer::standard(whisper.dims.n_vocab as u32, whisper.dims.n_audio_ctx)?;
 
     let pcm16 = if sample_rate == 16_000 {
         pcm.to_vec()
     } else {
-        let out: Vec<f32> = {
-            #[cfg(feature = "audio")]
-            {
-                resample_to_16k(pcm, sample_rate, 16_000)?
-            }
-            #[cfg(not(feature = "audio"))]
-            {
-                return Err(Error::Unsupported(
-                    "resampling non-16 kHz audio needs the `audio` feature".into(),
-                ));
-            }
-        };
-        log::info!(
-            "audio: resampled {} Hz -> 16 kHz ({} samples)",
-            sample_rate,
-            out.len()
-        );
-        out
+        // Without the `audio` feature this arm diverges, so it must not be
+        // bound to a value: the log line belongs inside the arm that has one.
+        #[cfg(feature = "audio")]
+        {
+            let out = resample_to_16k(pcm, sample_rate, 16_000)?;
+            log::info!(
+                "audio: resampled {} Hz -> 16 kHz ({} samples)",
+                sample_rate,
+                out.len()
+            );
+            out
+        }
+        #[cfg(not(feature = "audio"))]
+        {
+            return Err(Error::Unsupported(
+                "resampling non-16 kHz audio needs the `audio` feature".into(),
+            ));
+        }
     };
     let chunks = split_chunks(&pcm16);
     if chunks.is_empty() {
@@ -282,7 +302,12 @@ pub fn transcribe<B: Backend>(
                 fraction: None,
             },
         );
-        return Ok(vec![]);
+        // Nothing to decode, so no detection ever ran. Report the requested
+        // language, matching the fallback the main path uses.
+        return Ok(TranscriptionResult {
+            language: options.language.clone().unwrap_or_else(|| "en".to_string()),
+            segments: vec![],
+        });
     }
     log::info!(
         "decode: {:.1} s of audio in {} window(s) of 30 s",
@@ -309,6 +334,10 @@ pub fn transcribe<B: Backend>(
     let mut resolved_language: Option<String> = options.language.clone();
 
     let mut segments: Vec<TranscriptionSegment> = Vec::new();
+    // Real audio length, not the padded window length: the last window of a
+    // short clip is zero-padded up to 30 s and must not leak that padding
+    // into the reported transcript.
+    let audio_ms = (pcm16.len() as u64 * 1000 / 16_000) as u32;
     let windows = chunks.len();
     for (ci, (chunk, _)) in chunks.iter().enumerate() {
         let seek_ms = (ci * 30_000) as u32;
@@ -401,11 +430,11 @@ pub fn transcribe<B: Backend>(
         } else {
             segments.extend(assembled);
         }
+        clamp_segments_to_audio(&mut segments[from..], audio_ms);
         for segment in &segments[from..] {
             log::info!("  {}", segment_progress(segment));
             emit(options, &ProgressUpdate::Segment(segment.clone()));
         }
-
         if options.condition_on_previous_text {
             context.extend(tokens[prefix_len..].iter().copied().filter(|&t| t != tokenizer.eot()));
         }
@@ -418,7 +447,36 @@ pub fn transcribe<B: Backend>(
             fraction: Some(1.0),
         },
     );
-    Ok(segments)
+    Ok(TranscriptionResult {
+        language: resolved_language.unwrap_or_else(|| "en".to_string()),
+        segments,
+    })
+}
+
+/// Resolve a front end's requested language to what the decoder expects.
+///
+/// Both the GUI and the CLI spell auto-detection `"auto"`, but the decoder
+/// only knows `None` - forwarding the literal aborts with
+/// `unknown language auto`. Resolved in one place so the two front ends
+/// cannot drift apart.
+pub fn requested_language(raw: Option<&str>) -> Option<String> {
+    raw.filter(|language| *language != "auto").map(str::to_string)
+}
+
+/// Clamp every segment end to the real audio duration.
+///
+/// The reference does this per segment:
+/// `end=min(round(end, 2), content_frames * seconds_per_frame)`. Without it a
+/// clip shorter than the 30 s window still reports the padded window length,
+/// so 22 s of speech would be handed back as 30 s of transcript.
+///
+/// Only `end` moves. `start` is left as decoded, matching the reference.
+pub fn clamp_segments_to_audio(segments: &mut [TranscriptionSegment], audio_ms: u32) {
+    for segment in segments {
+        if segment.end > audio_ms {
+            segment.end = audio_ms;
+        }
+    }
 }
 
 /// `MM:SS.mmm` clock used by progress logging.
