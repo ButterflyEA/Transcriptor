@@ -16,8 +16,10 @@ against the official implementation token for token (see
 | Windows x64 | `Transcriptor_1.0.0_x64-setup.exe` | NSIS installer, unsigned |
 | Windows x64 | `Transcriptor_1.0.0_x64_en-US.msi` | MSI installer, unsigned |
 
-Linux artefacts are built separately — `tauri.conf.json` currently targets
-`nsis` and `msi` only, so a Linux bundle needs its targets adding first.
+Linux artefacts are not attached to this release yet. `tauri.linux.conf.json`
+configures AppImage, deb and rpm targets, so `tauri build` on Linux produces all
+three — see [**docs/linux-build.md**](docs/linux-build.md), which also covers
+the glibc baseline problem with building portable packages on Arch.
 
 Windows binaries are **not code-signed**, so SmartScreen will warn on first
 run. Choose *More info → Run anyway*.
