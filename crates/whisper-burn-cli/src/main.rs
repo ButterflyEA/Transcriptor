@@ -178,7 +178,7 @@ fn run(args: &Args) -> Result<()> {
         eprintln!("decoded {} samples @ {sample_rate} Hz", pcm.len());
     }
 
-    let segments = match choice {
+    let result = match choice {
         BackendChoice::Cpu(device) => transcribe_dev::<burn::backend::ndarray::NdArray<f32>>(
             &device,
             &pcm,
@@ -189,6 +189,7 @@ fn run(args: &Args) -> Result<()> {
             transcribe_dev::<burn::backend::wgpu::Wgpu>(&device, &pcm, sample_rate, args)?
         }
     };
+    let segments = &result.segments;
 
     let stdout = segments
         .iter()
@@ -199,7 +200,7 @@ fn run(args: &Args) -> Result<()> {
 
     if let Some(format) = args.output {
         let path = args.audio.with_extension(format.extension());
-        let rendered = format.render(&segments);
+        let rendered = format.render(segments);
         std::fs::write(&path, rendered).map_err(|source| Error::Io {
             path: path.clone(),
             source,
@@ -257,7 +258,7 @@ fn transcribe_dev<B: Backend>(
     pcm: &[f32],
     sample_rate: u32,
     args: &Args,
-) -> Result<Vec<whisper_burn::TranscriptionSegment>> {
+) -> Result<whisper_burn::TranscriptionResult> {
     let model = Whisper::<B>::from_pretrained(args.model, device.clone())?;
     let options = TranscriptionOptions {
         language: args.language.clone(),

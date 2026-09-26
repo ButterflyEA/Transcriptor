@@ -200,7 +200,12 @@ fn run_backend<B: burn::tensor::backend::Backend>(
     )
     .map_err(AppError::from)?;
     emit_stage(app, "weights", format!("{model} ready"), None);
-    burn_transcribe(&whisper, pcm, sample_rate, options).map_err(AppError::from)
+    // The GUI already collects the language up front (it drives the sot
+    // sequence), and its `DoneDto`/export contract is segments-only, so the
+    // resolved language is not surfaced here.
+    burn_transcribe(&whisper, pcm, sample_rate, options)
+        .map(|result| result.segments)
+        .map_err(AppError::from)
 }
 
 fn make_download_callback(app: &AppHandle) -> whisper_burn::download::DownloadCallback {

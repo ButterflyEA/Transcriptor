@@ -2,11 +2,31 @@ use whisper_burn::config::ModelSize;
 use whisper_burn::tokenizer::tiktoken::CoreBpe;
 use whisper_burn::tokenizer::whisper::{STARTOPREV, Task, TextTokenizer};
 use whisper_burn::transcribe::{
-    TranscriptionOptions, chunk_prompt, push_untimestamped_fallback, validate_model_task,
-    validate_options,
+    TranscriptionOptions, TranscriptionResult, TranscriptionSegment, chunk_prompt,
+    push_untimestamped_fallback, validate_model_task, validate_options,
 };
 
 const MINI: &str = include_str!("fixtures/mini.tiktoken");
+
+/// `transcribe` resolves the spoken language once - from `options.language`,
+/// or by detecting it on the first window - and must hand it back rather than
+/// keep it internal, because the JSON output writes it in the header.
+#[test]
+fn transcription_result_carries_language_and_segments() {
+    let result = TranscriptionResult {
+        language: "he".to_string(),
+        segments: vec![TranscriptionSegment {
+            start: 0,
+            end: 1_000,
+            text: "shalom".to_string(),
+        }],
+    };
+    assert_eq!(result.language, "he");
+    assert_eq!(result.segments.len(), 1);
+    assert_eq!(result.segments[0].start, 0);
+    assert_eq!(result.segments[0].end, 1_000);
+    assert_eq!(result.segments[0].text, "shalom");
+}
 
 fn mini_tokenizer() -> TextTokenizer {
     let mut specials = vec![
@@ -164,7 +184,7 @@ mod network {
             beam_size: 0,
             ..Default::default()
         };
-        let segs = transcribe(&w, &pcm, 16000, &options).unwrap();
+        let segs = transcribe(&w, &pcm, 16000, &options).unwrap().segments;
         assert!(!segs.is_empty(), "no segments produced");
         assert_eq!(segs[0].start, 0, "first segment must start at 0");
         assert!(
@@ -195,7 +215,7 @@ mod network {
             beam_size: 0,
             ..Default::default()
         };
-        let segs = transcribe(&w, &pcm, 16000, &options).unwrap();
+        let segs = transcribe(&w, &pcm, 16000, &options).unwrap().segments;
         assert!(!segs.is_empty(), "no segments produced");
         let text: String = segs
             .iter()
@@ -225,7 +245,7 @@ mod network {
             progress: Some(cb),
             ..Default::default()
         };
-        let segs = transcribe(&w, &pcm, 16000, &options).unwrap();
+        let segs = transcribe(&w, &pcm, 16000, &options).unwrap().segments;
         assert!(!segs.is_empty(), "no segments produced");
 
         let events = events.lock().unwrap();
@@ -263,7 +283,7 @@ mod network {
             cancelled,
             ..Default::default()
         };
-        let segs = transcribe(&w, &pcm, 16000, &options).unwrap();
+        let segs = transcribe(&w, &pcm, 16000, &options).unwrap().segments;
         assert!(segs.is_empty(), "expected no segments, got {segs:?}");
 
         let events = events.lock().unwrap();

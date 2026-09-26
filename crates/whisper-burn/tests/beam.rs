@@ -69,7 +69,7 @@ fn timestamp_rules_are_applied_per_hypothesis_in_beam_decoding() {
     let _ = std::fs::remove_dir_all(&tmp);
     common::write_fake_checkpoint(ModelSize::Tiny, &tmp);
     let dev = NdArrayDevice::default();
-    let w = Whisper::<B>::load(ModelSize::Tiny, &tmp, dev.clone()).unwrap();
+    let w = Whisper::<B>::load(ModelSize::Tiny, &tmp, dev).unwrap();
     let xa = fake_silence_features(&w, &dev);
 
     let mut beam_tokens = vec![SOT, TRANSCRIBE];

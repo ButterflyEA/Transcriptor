@@ -15,7 +15,9 @@ pub mod transcribe;
 pub mod weights;
 pub use config::ModelSize;
 pub use error::{Error, Result};
-pub use transcribe::{TranscriptionOptions, TranscriptionSegment, transcribe, validate_options};
+pub use transcribe::{
+    TranscriptionOptions, TranscriptionResult, TranscriptionSegment, transcribe, validate_options,
+};
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")

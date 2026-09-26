@@ -40,6 +40,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// The segments `transcribe` returns: millisecond start/end plus decoded text.
 pub use crate::decoding::segments::Segment as TranscriptionSegment;
 
+/// What `transcribe` hands back: the decoded segments plus the language they
+/// were decoded in.
+///
+/// The language is the *resolved* one, not the requested one. When
+/// `TranscriptionOptions::language` is `None` it comes from one-shot detection
+/// on the first window, so it has to travel with the result; the JSON writer
+/// emits it as a header field. A caller that echoes the requested language
+/// back would report `"en"` for Hebrew audio.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TranscriptionResult {
+    /// Resolved spoken language, as an ISO 639-1 code (`"he"`, `"en"`, ...).
+    pub language: String,
+    /// Decoded segments in order, in milliseconds from the start of the audio.
+    pub segments: Vec<TranscriptionSegment>,
+}
+
 /// Pipeline stages surfaced to UIs via the progress callback. `Download`
 /// carries a completion `fraction` when the total size is known.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -241,36 +257,39 @@ pub fn push_untimestamped_fallback(
 
 /// Transcribe raw PCM into timestamped segments. `sample_rate` is the PCM's
 /// rate; anything but 16 kHz is resampled (requires the `audio` feature).
+///
+/// Returns the resolved language alongside the segments; see
+/// [`TranscriptionResult`].
 pub fn transcribe<B: Backend>(
     whisper: &Whisper<B>,
     pcm: &[f32],
     sample_rate: u32,
     options: &TranscriptionOptions,
-) -> Result<Vec<TranscriptionSegment>> {
+) -> Result<TranscriptionResult> {
     validate_options(options)?;
     let tokenizer = TextTokenizer::standard(whisper.dims.n_vocab as u32, whisper.dims.n_audio_ctx)?;
 
     let pcm16 = if sample_rate == 16_000 {
         pcm.to_vec()
     } else {
-        let out: Vec<f32> = {
-            #[cfg(feature = "audio")]
-            {
-                resample_to_16k(pcm, sample_rate, 16_000)?
-            }
-            #[cfg(not(feature = "audio"))]
-            {
-                return Err(Error::Unsupported(
-                    "resampling non-16 kHz audio needs the `audio` feature".into(),
-                ));
-            }
-        };
-        log::info!(
-            "audio: resampled {} Hz -> 16 kHz ({} samples)",
-            sample_rate,
-            out.len()
-        );
-        out
+        // Without the `audio` feature this arm diverges, so it must not be
+        // bound to a value: the log line belongs inside the arm that has one.
+        #[cfg(feature = "audio")]
+        {
+            let out = resample_to_16k(pcm, sample_rate, 16_000)?;
+            log::info!(
+                "audio: resampled {} Hz -> 16 kHz ({} samples)",
+                sample_rate,
+                out.len()
+            );
+            out
+        }
+        #[cfg(not(feature = "audio"))]
+        {
+            return Err(Error::Unsupported(
+                "resampling non-16 kHz audio needs the `audio` feature".into(),
+            ));
+        }
     };
     let chunks = split_chunks(&pcm16);
     if chunks.is_empty() {
@@ -282,7 +301,12 @@ pub fn transcribe<B: Backend>(
                 fraction: None,
             },
         );
-        return Ok(vec![]);
+        // Nothing to decode, so no detection ever ran. Report the requested
+        // language, matching the fallback the main path uses.
+        return Ok(TranscriptionResult {
+            language: options.language.clone().unwrap_or_else(|| "en".to_string()),
+            segments: vec![],
+        });
     }
     log::info!(
         "decode: {:.1} s of audio in {} window(s) of 30 s",
@@ -418,7 +442,10 @@ pub fn transcribe<B: Backend>(
             fraction: Some(1.0),
         },
     );
-    Ok(segments)
+    Ok(TranscriptionResult {
+        language: resolved_language.unwrap_or_else(|| "en".to_string()),
+        segments,
+    })
 }
 
 /// `MM:SS.mmm` clock used by progress logging.
