@@ -3,10 +3,47 @@ use whisper_burn::tokenizer::tiktoken::CoreBpe;
 use whisper_burn::tokenizer::whisper::{STARTOPREV, Task, TextTokenizer};
 use whisper_burn::transcribe::{
     TranscriptionOptions, TranscriptionResult, TranscriptionSegment, chunk_prompt,
-    push_untimestamped_fallback, validate_model_task, validate_options,
+    clamp_segments_to_audio, push_untimestamped_fallback, requested_language,
+    validate_model_task, validate_options,
 };
 
 const MINI: &str = include_str!("fixtures/mini.tiktoken");
+
+/// Both front ends spell auto-detection `"auto"`, but the decoder only knows
+/// `None`. Forwarding the literal used to abort with
+/// `unknown language auto`, so the sentinel is resolved here instead.
+#[test]
+fn the_auto_sentinel_means_detect_rather_than_a_language_named_auto() {
+    assert_eq!(requested_language(Some("auto")), None);
+    assert_eq!(requested_language(None), None);
+    assert_eq!(
+        requested_language(Some("he")),
+        Some("he".to_string()),
+        "an explicit language is forwarded untouched"
+    );
+}
+
+/// A clip shorter than the 30 s window is padded, so the decoder can emit a
+/// segment ending at 30 s. The reference clamps `end` to the real audio
+/// duration (`min(round(end, 2), content_frames * seconds_per_frame)`), so
+/// 22.1 s of audio must never be reported as 30 s of transcript.
+#[test]
+fn segment_ends_are_clamped_to_the_real_audio_duration() {
+    let mut segs = vec![
+        TranscriptionSegment { start: 0, end: 30_000, text: "a".into() },
+        TranscriptionSegment { start: 30_000, end: 45_000, text: "b".into() },
+    ];
+    clamp_segments_to_audio(&mut segs, 22_100);
+    assert_eq!(segs[0].end, 22_100, "window-padded end must be clamped");
+    assert_eq!(segs[0].start, 0, "start is left alone");
+    // a segment wholly past the end is clamped too, not left dangling
+    assert_eq!(segs[1].end, 22_100);
+
+    // a segment that already fits is untouched
+    let mut fits = vec![TranscriptionSegment { start: 0, end: 5_000, text: "c".into() }];
+    clamp_segments_to_audio(&mut fits, 22_100);
+    assert_eq!(fits[0].end, 5_000);
+}
 
 /// `transcribe` resolves the spoken language once - from `options.language`,
 /// or by detecting it on the first window - and must hand it back rather than

@@ -13,7 +13,7 @@ use whisper_burn::audio::decode::decode_to_mono_f32;
 use whisper_burn::backends::{BackendChoice, cpu_device, try_wgpu_device};
 use whisper_burn::model::whisper::Whisper;
 use whisper_burn::tokenizer::whisper::Task;
-use whisper_burn::transcribe::validate_model_task;
+use whisper_burn::transcribe::{requested_language, validate_model_task};
 use whisper_burn::{Error, ModelSize, Result, TranscriptionOptions, transcribe, validate_options};
 use whisper_burn_cli::output;
 
@@ -154,7 +154,7 @@ fn main() -> ExitCode {
 
 fn run(args: &Args) -> Result<()> {
     validate_options(&TranscriptionOptions {
-        language: args.language.clone(),
+        language: requested_language(args.language.as_deref()),
         task: args.task.into(),
         beam_size: args.beam_size,
         ..Default::default()
@@ -266,7 +266,7 @@ fn transcribe_dev<B: Backend>(
 ) -> Result<whisper_burn::TranscriptionResult> {
     let model = Whisper::<B>::from_pretrained(args.model, device.clone())?;
     let options = TranscriptionOptions {
-        language: args.language.clone(),
+        language: requested_language(args.language.as_deref()),
         task: args.task.into(),
         beam_size: args.beam_size,
         initial_prompt: args.initial_prompt.clone(),

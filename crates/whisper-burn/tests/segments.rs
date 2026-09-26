@@ -61,6 +61,27 @@ fn segments_split_on_timestamps() {
     assert_eq!(segs[1].text, "hello!");
 }
 
+/// Whisper marks a word start with the BPE space marker, so the first text
+/// token after `<|ts|>` decodes to " hello". The timestamp already supplies
+/// the word break, so segment text starts flush against the word - the
+/// reference golden has no leading space, and one costs a byte-level
+/// mismatch on every segment.
+#[test]
+fn segment_text_drops_the_post_timestamp_space() {
+    let tok = mini_tokenizer();
+    // <|0.00|> <space> hello <|0.10|> <|eot|>: the BPE word-start marker in
+    // front of the first real token is what a real decoded window looks like.
+    // Token 3 is "hello" in this fixture.
+    let space = tok.encode(" ").expect("fixture tokenises a bare space");
+    let mut sequence = vec![50364];
+    sequence.extend(space.iter().copied());
+    sequence.push(3);
+    sequence.extend([50369, 50256]);
+
+    let segs = assemble_segments(&sequence, &tok, 0).unwrap();
+    assert_eq!(segs[0].text, "hello", "leading space must be dropped");
+}
+
 #[test]
 fn seek_offsets_all_times() {
     let tok = mini_tokenizer();

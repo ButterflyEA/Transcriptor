@@ -2,7 +2,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use whisper_burn::format::{format_docx, format_json, format_srt, format_txt, format_vtt};
 use whisper_burn::tokenizer::whisper::Task;
-use whisper_burn::transcribe::{ProgressCallback, TranscriptionOptions, validate_model_task, validate_options};
+use whisper_burn::transcribe::{
+    ProgressCallback, TranscriptionOptions, requested_language, validate_model_task,
+    validate_options,
+};
 use whisper_burn::{ModelSize, TranscriptionSegment};
 
 use crate::error::AppError;
@@ -86,7 +89,7 @@ impl TranscribeParams {
         let task = parse_task(&self.task)?;
         let model = ModelSize::parse(&self.model)?;
         validate_params(model, task)?;
-        let language = self.language.filter(|l| l != "auto");
+        let language = requested_language(self.language.as_deref());
         let initial_prompt = self.initial_prompt.filter(|p| !p.trim().is_empty());
         let options = TranscriptionOptions {
             language,

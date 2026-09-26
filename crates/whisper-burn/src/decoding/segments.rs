@@ -45,6 +45,17 @@ pub fn timestamp_token_to_ms(token: u32, tokenizer: &TextTokenizer) -> u32 {
     token.saturating_sub(tokenizer.timestamp_begin) * TIME_PRECISION_MS
 }
 
+/// Decode a run of text tokens into segment text.
+///
+/// Whisper marks word starts with the BPE space marker, so the first text
+/// token after a timestamp decodes to " hello". The timestamp already
+/// supplies that word break, so the leading space is dropped: reference
+/// segment text starts flush against the word, and a stray space is a
+/// byte-level mismatch on every segment.
+pub fn decode_segment_text(tokenizer: &TextTokenizer, tokens: &[u32]) -> Result<String> {
+    Ok(tokenizer.decode(tokens)?.trim_start().to_string())
+}
+
 /// Split a decoded window token stream into timestamp-bounded segments.
 /// `seek` is the window's start time (in ms) in the original audio and is
 /// added to every segment time. Text tokens (`< eot`) accumulate between
@@ -64,7 +75,7 @@ pub fn assemble_segments(
             if let Some(start) = open_ms
                 && !text_tokens.is_empty()
             {
-                let text = tokenizer.decode(&text_tokens)?;
+                let text = decode_segment_text(tokenizer, &text_tokens)?;
                 segments.push(Segment {
                     start,
                     end: ms,
