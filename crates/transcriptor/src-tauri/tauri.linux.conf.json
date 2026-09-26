@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["appimage", "deb", "rpm"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ],
+    "category": "Utility",
+    "publisher": "ButterflyEA",
+    "homepage": "https://github.com/ButterflyEA/Transcriptor",
+    "copyright": "Copyright (c) 2026 ButterflyEA",
+    "license": "MIT",
+    "licenseFile": "../../../LICENSE",
+    "shortDescription": "Transcribe audio and video locally with Whisper",
+    "longDescription": "Transcriptor is a from-scratch Rust implementation of OpenAI Whisper running entirely on your own machine. It transcribes audio and video files, detects the spoken language automatically, and exports txt, srt, vtt, json or docx. No audio ever leaves your computer.",
+    "linux": {
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "gtk3"]
+      }
+    }
+  }
+}
