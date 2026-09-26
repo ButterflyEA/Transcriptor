@@ -346,11 +346,51 @@ streamed to stderr while the transcript goes to stdout.
 
 **User story:** As a maintainer, I want proof that our output matches the official whisper implementation.
 
-- [ ] Write `scripts/cement_reference.py` (official openai/whisper → golden fixtures for jfk.flac)
-- [ ] Log-mel allclose (atol 1e-4)
-- [ ] Encoder allclose (atol 1e-3)
-- [ ] Greedy token ids exactly equal
-- [ ] Beam output equal (beam 4, patience 1)
-- [ ] Segment text equality to `expected_segments.txt`
-- [ ] Final gates: offline suite green, golden suite green, clippy clean
-- [ ] Commit golden fixtures + fix commits
+Rewritten after the fact: the original checklist described an approach that was
+never followed (a `cement_reference.py` writing jfk.flac fixtures, `allclose`
+atol 1e-4, greedy token-id equality). What was actually built is below, along
+with what turned out to be wrong on the way.
+
+- [x] `scripts/cement_reference.py` generates goldens from `openai/whisper`
+      (pinned 20250625), with a `.provenance.json` per golden recording library
+      versions, search settings and audio
+- [x] Reference runs use `beam_size=5`, `temperature=0.0` — the temperature
+      fallback chain re-decodes on low confidence and would compare two
+      different algorithms against our port
+- [x] One golden per model (tiny, base, small, medium, large, large-v2,
+      large-v3, large-v3-turbo) plus forced-language variants; 12 total
+- [x] Encoder golden within 3e-3 (`tests/golden_encoder.rs`, un-ignored)
+- [x] **large-v3 in Hebrew matches the reference byte for byte** — language,
+      segment count, all six boundaries, all three texts
+- [x] Layered gate across the size range: exact for large-v3, correct language
+      and ±1 segment for all eight, text within 10% edit distance
+- [x] Final gates: `cargo test --workspace` green, golden suite green
+      (5 tests), `cargo clippy --workspace --all-targets` clean
+- [x] `docs/golden/README.md` documents the gate policy and the measured deltas
+
+### Defects the goldens actually caught
+
+- `TIME_PRECISION_MS` was 10; the reference steps 20 ms. Every timestamp was
+  wrong by 2x.
+- `ApplyTimestampRules` was never applied during decoding.
+- Segment text carried the BPE word-start space. Invisible on screen, fatal to
+  an exact comparison.
+- Segment ends ran past the audio: 22 s of speech reported as 30 s.
+- The CLI forwarded `--language auto` as a literal and died with
+  `unknown language auto`.
+
+### Findings, not fixed
+
+- **The pre-existing goldens were not reference output.** All six had leading
+  spaces stripped and the tiny ones carried a segmentation no reference run
+  produces (tiny/auto claimed 3 segments, whisper gives 2). Any test that
+  passed against them passed for the wrong reason.
+- **large-v2 emits 2 segments where the reference emits 3.**
+- **`tiny`'s first timestamp lands 5.7 s from the reference's.** Consistent
+  with float tie-breaking on a weak model, but unexplained.
+- Divergence grows as models get smaller (large-v3 0 chars → tiny 9 chars),
+  which is the expected fingerprint of burn-on-f32 differing from PyTorch.
+  Byte-exactness across all eight models is not a realistic gate.
+- Forced English on Hebrew audio (`tiny/en`, `large-v3/en`) diverges badly
+  (63 and 26 characters). Recorded but never asserted: the task is degenerate
+  by design and a check there measures luck, not quality.

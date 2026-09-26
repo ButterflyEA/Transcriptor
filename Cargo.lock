@@ -9036,7 +9036,7 @@ dependencies = [
 
 [[package]]
 name = "transcriptor"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "burn",
  "log",
@@ -9949,7 +9949,7 @@ dependencies = [
 
 [[package]]
 name = "whisper-burn"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "base64 0.23.1",
  "burn",
@@ -9968,7 +9968,7 @@ dependencies = [
 
 [[package]]
 name = "whisper-burn-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "burn",
  "clap",
