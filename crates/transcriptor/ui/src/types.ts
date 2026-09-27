@@ -1,3 +1,8 @@
+export interface HostCapacity {
+  totalBytes: number;
+  availableBytes: number;
+}
+
 export interface Defaults {
   models: string[];
   languages: string[];
@@ -5,6 +10,10 @@ export interface Defaults {
   defaultTask: string;
   defaultBeamSize: number;
   devices: string[];
+  hostCapacity: HostCapacity | null;
+  recommendedModel: string | null;
+  modelFits: Record<string, boolean>;
+  modelNeedsBytes: Record<string, number>;
 }
 
 export interface TaskParams {

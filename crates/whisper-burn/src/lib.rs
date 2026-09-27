@@ -9,6 +9,7 @@ pub mod download;
 pub mod error;
 pub mod features;
 pub mod format;
+pub mod host;
 pub mod model;
 pub mod tokenizer;
 pub mod transcribe;

@@ -20,6 +20,7 @@ fancy-regex.workspace = true
 log.workspace = true
 docx-rs.workspace = true
 printpdf.workspace = true
+sysinfo.workspace = true
 symphonia = { workspace = true, optional = true, features = ["all"] }
 rubato = { workspace = true, optional = true }
 ureq = { workspace = true, optional = true }

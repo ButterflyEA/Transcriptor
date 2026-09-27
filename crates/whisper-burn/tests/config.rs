@@ -63,6 +63,47 @@ fn validate_rejects_wrong_mel_bins() {
 }
 
 #[test]
+fn resident_bytes_grow_with_model_size() {
+    // `ModelSize::ALL` is ordered by registry, not by footprint - turbo is
+    // listed after large-v3 but is less than half its size. Order explicitly.
+    let ordered = [
+        ModelSize::Tiny,
+        ModelSize::Base,
+        ModelSize::Small,
+        ModelSize::Medium,
+        ModelSize::LargeV3Turbo,
+        ModelSize::Large,
+        ModelSize::LargeV2,
+        ModelSize::LargeV3,
+        ModelSize::IvritHebrew,
+    ];
+    let sizes: Vec<u64> = ordered.iter().map(|m| m.approx_resident_bytes()).collect();
+    for pair in sizes.windows(2) {
+        assert!(
+            pair[1] >= pair[0],
+            "footprint must not shrink along the size order, got {pair:?}"
+        );
+    }
+}
+
+#[test]
+fn every_model_has_a_non_zero_footprint() {
+    for model in ModelSize::ALL {
+        assert!(
+            model.approx_resident_bytes() > 0,
+            "{} must report a footprint",
+            model.cli_name()
+        );
+    }
+}
+
+#[test]
+fn tiny_is_cheap_and_large_v3_is_not() {
+    assert!(ModelSize::Tiny.approx_resident_bytes() < 1_000_000_000);
+    assert!(ModelSize::LargeV3.approx_resident_bytes() > 6_000_000_000);
+}
+
+#[test]
 fn parse_and_cli_name_round_trip_for_every_model() {
     for model in ModelSize::ALL {
         assert_eq!(ModelSize::parse(model.cli_name()).unwrap(), model);

@@ -11,11 +11,22 @@ interface Props {
   onStop: () => void;
 }
 
+const GIB = 1024 * 1024 * 1024;
+
+/** Rounded GB for display only - never feed this back into a decision. */
+function gib(bytes: number | undefined): string {
+  if (bytes === undefined) return "?";
+  return (bytes / GIB).toFixed(1);
+}
+
 export function ParamsRail(props: Props) {
   const { defaults, params, onChange, audio, running, onBrowse, onRun, onStop } = props;
   const label = "block text-sm font-medium text-slate-600 dark:text-slate-300";
   const select =
     "mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100";
+  const capacity = defaults?.hostCapacity ?? null;
+  const selectedNeeds = defaults?.modelNeedsBytes?.[params.model];
+  const selectedFits = defaults?.modelFits?.[params.model];
   return (
     <aside className="w-72 shrink-0 space-y-4 overflow-y-auto border-r border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
       <div>
@@ -42,9 +53,25 @@ export function ParamsRail(props: Props) {
           onChange={(e) => onChange({ ...params, model: e.target.value })}
         >
           {(defaults?.models ?? []).map((m) => (
-            <option key={m} value={m}>{m}</option>
+            <option key={m} value={m}>
+              {defaults?.modelFits?.[m] === false ? `⚠ ${m} — needs ~${gib(defaults.modelNeedsBytes[m])} GB` : m}
+            </option>
           ))}
         </select>
+        {capacity && (
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {gib(capacity.totalBytes)} GB RAM total, {gib(capacity.availableBytes)} GB available
+            {defaults?.recommendedModel
+              ? ` — ${defaults.recommendedModel} and smaller should fit`
+              : " — no model looks safe right now"}
+          </p>
+        )}
+        {selectedFits === false && selectedNeeds !== undefined && (
+          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+            ⚠ {params.model} needs about {gib(selectedNeeds)} GB. The system may run out of memory and
+            close without an error message.
+          </p>
+        )}
       </div>
 
       <div>

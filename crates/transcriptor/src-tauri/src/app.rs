@@ -24,6 +24,19 @@ pub struct Defaults {
     pub default_task: String,
     pub default_beam_size: usize,
     pub devices: Vec<String>,
+    /// Absent when the host could not be measured, so the UI can stay quiet
+    /// rather than guess.
+    pub host_capacity: Option<HostCapacityDto>,
+    pub recommended_model: Option<String>,
+    pub model_fits: std::collections::HashMap<String, bool>,
+    pub model_needs_bytes: std::collections::HashMap<String, u64>,
+}
+
+#[derive(Serialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct HostCapacityDto {
+    pub total_bytes: u64,
+    pub available_bytes: u64,
 }
 
 #[tauri::command]
@@ -40,6 +53,27 @@ pub fn get_defaults() -> Result<Defaults, String> {
         v.insert(0, "auto".to_string());
         v
     };
+    let capacity = whisper_burn::host::detect();
+    let model_fits = ModelSize::ALL
+        .iter()
+        .map(|m| {
+            (
+                m.cli_name().to_string(),
+                capacity.is_some_and(|c| {
+                    whisper_burn::host::fits(whisper_burn::host::resident_bytes(*m), c.available_bytes)
+                }),
+            )
+        })
+        .collect();
+    let model_needs_bytes = ModelSize::ALL
+        .iter()
+        .map(|m| (m.cli_name().to_string(), whisper_burn::host::resident_bytes(*m)))
+        .collect();
+    let recommended_model = capacity.and_then(|c| {
+        whisper_burn::host::recommend_with(&c, &ModelSize::ALL, whisper_burn::host::resident_bytes)
+            .map(|m| m.cli_name().to_string())
+    });
+
     Ok(Defaults {
         models,
         languages,
@@ -47,6 +81,13 @@ pub fn get_defaults() -> Result<Defaults, String> {
         default_task: "transcribe".to_string(),
         default_beam_size: 0,
         devices: vec!["wgpu".to_string(), "cpu".to_string()],
+        host_capacity: capacity.map(|c| HostCapacityDto {
+            total_bytes: c.total_bytes,
+            available_bytes: c.available_bytes,
+        }),
+        recommended_model,
+        model_fits,
+        model_needs_bytes,
     })
 }
 
@@ -265,6 +306,41 @@ mod tests {
 use whisper_burn::TranscriptionSegment;
 
     #[test]
+    fn defaults_report_capacity_and_a_verdict_for_every_model() {
+        let d = get_defaults().expect("defaults");
+        let cap = d.host_capacity.as_ref().expect("a real host reports memory");
+        assert!(cap.total_bytes > 0);
+        assert!(cap.available_bytes <= cap.total_bytes);
+
+        // Every offered model needs a verdict, or the UI would silently skip it.
+        for name in &d.models {
+            assert!(d.model_fits.contains_key(name), "{name} has no verdict");
+            assert!(d.model_needs_bytes.contains_key(name), "{name} has no size");
+        }
+        assert_eq!(d.model_fits.len(), d.models.len());
+    }
+
+    #[test]
+    fn the_recommendation_is_the_largest_model_that_fits() {
+        let d = get_defaults().expect("defaults");
+        let cap = d.host_capacity.as_ref().expect("capacity");
+
+        let best = d
+            .model_needs_bytes
+            .iter()
+            .filter(|(name, _)| d.model_fits[*name])
+            .max_by_key(|(_, bytes)| **bytes)
+            .map(|(name, _)| name.clone());
+
+        assert_eq!(d.recommended_model, best, "recommendation must be the max that fits");
+        if let Some(rec) = &d.recommended_model {
+            assert!(d.model_fits[rec], "recommended model {rec} must fit");
+        }
+        // Available memory is the basis for the verdict, not total.
+        let _ = cap;
+    }
+
+    #[test]
     fn defaults_serialize_as_camel_case() {
         let d = Defaults {
             models: vec!["tiny".into()],
@@ -273,11 +349,19 @@ use whisper_burn::TranscriptionSegment;
             default_task: "transcribe".into(),
             default_beam_size: 0,
             devices: vec!["wgpu".into()],
+            host_capacity: None,
+            recommended_model: None,
+            model_fits: std::collections::HashMap::new(),
+            model_needs_bytes: std::collections::HashMap::new(),
         };
         let v = serde_json::to_value(&d).unwrap();
         assert_eq!(v["defaultModel"], "tiny");
         assert_eq!(v["defaultTask"], "transcribe");
         assert_eq!(v["defaultBeamSize"], 0);
+        assert!(v["hostCapacity"].is_null());
+        assert!(v["recommendedModel"].is_null());
+        assert!(v["modelFits"].is_object());
+        assert!(v["modelNeedsBytes"].is_object());
     }
 
     #[test]

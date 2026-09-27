@@ -99,6 +99,28 @@ impl ModelSize {
         matches!(self, ModelSize::IvritHebrew)
     }
 
+    /// Approximate resident memory for this model once loaded, in bytes.
+    ///
+    /// Whisper's Hugging Face repos publish fp16 weights, but we decode in
+    /// f32, so this is roughly four bytes per parameter. Treat it as a **floor**,
+    /// not a total: it excludes activations, the mel spectrogram and the KV
+    /// cache, all of which grow with the audio being transcribed. Callers use
+    /// it to warn before an out-of-memory kill, never to guarantee success.
+    pub fn approx_resident_bytes(self) -> u64 {
+        const MIB: u64 = 1024 * 1024;
+        match self {
+            ModelSize::Tiny => 155 * MIB,
+            ModelSize::Base => 290 * MIB,
+            ModelSize::Small => 976 * MIB,
+            ModelSize::Medium => 3_100 * MIB,
+            ModelSize::Large
+            | ModelSize::LargeV2
+            | ModelSize::LargeV3
+            | ModelSize::IvritHebrew => 6_200 * MIB,
+            ModelSize::LargeV3Turbo => 3_300 * MIB,
+        }
+    }
+
     pub fn expected_dims(self) -> Dims {
         match self {
             ModelSize::Tiny => Dims {
