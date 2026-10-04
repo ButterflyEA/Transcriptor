@@ -6,6 +6,7 @@ use whisper_burn::backends::{BackendChoice, default_device};
 use whisper_burn::model::whisper::Whisper;
 use whisper_burn::{ModelSize, Result, TranscriptionOptions, TranscriptionSegment, transcribe};
 
+#[allow(clippy::large_enum_variant)]
 enum Loaded {
     Cpu(Whisper<NdArray<f32>>),
     Wgpu(Whisper<Wgpu>),
