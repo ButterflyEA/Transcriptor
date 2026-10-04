@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use clap::{Parser, Subcommand, ValueEnum};
+use dictation_service::audio::{CpalRecorder, Recorder};
 use dictation_service::config::parse_model;
 use dictation_service::engine::Engine;
 use whisper_burn::audio::decode::decode_to_mono_f32;
@@ -27,6 +28,14 @@ enum Device {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Developer tool: record from the microphone and print level stats.
+    #[command(hide = true)]
+    RecordTest {
+        #[arg(long, default_value_t = 3)]
+        secs: u64,
+        #[arg(long)]
+        device: Option<String>,
+    },
     /// Developer tool: transcribe an audio file from a local model folder.
     #[command(hide = true)]
     TranscribeFile {
@@ -48,6 +57,13 @@ enum Cmd {
 fn main() -> ExitCode {
     match Args::parse().command {
         None => ExitCode::SUCCESS,
+        Some(Cmd::RecordTest { secs, device }) => match record_test(secs, device) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some(Cmd::TranscribeFile {
             path,
             model_dir,
@@ -95,5 +111,17 @@ fn transcribe_file(
         println!("run={run} elapsed_ms={}", t.elapsed().as_millis());
         println!("{text}");
     }
+    Ok(())
+}
+
+fn record_test(secs: u64, device: Option<String>) -> Result<(), String> {
+    let mut rec = CpalRecorder::new(device, 120);
+    rec.start()?;
+    std::thread::sleep(std::time::Duration::from_secs(secs));
+    let r = rec.stop()?;
+    println!("samples={}", r.samples.len());
+    println!("rate={}", r.sample_rate);
+    println!("duration_ms={}", r.duration_ms());
+    println!("peak={:.4}", r.peak());
     Ok(())
 }
