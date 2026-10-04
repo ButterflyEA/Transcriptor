@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/whisper-burn", "crates/whisper-burn-cli", "crates/transcriptor/src-tauri"]
+members = ["crates/whisper-burn", "crates/whisper-burn-cli", "crates/transcriptor/src-tauri", "crates/dictation-service"]
 
 [workspace.package]
 version = "1.0.0"
@@ -22,3 +22,5 @@ docx-rs = "0.3"
 printpdf = "0.8"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sysinfo = "0.37"
+toml = "0.8"
+dirs = "6"

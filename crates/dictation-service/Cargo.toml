@@ -1,0 +1,28 @@
+[package]
+name = "dictation-service"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "dictation_service"
+
+[[bin]]
+name = "dictation"
+path = "src/main.rs"
+
+[features]
+default = []
+evdev = ["dep:evdev"]
+
+[dependencies]
+whisper-burn = { path = "../whisper-burn", features = ["audio"] }
+burn = { workspace = true, features = ["wgpu", "ndarray"] }
+serde.workspace = true
+toml.workspace = true
+dirs.workspace = true
+clap.workspace = true
+log.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = { version = "0.13", optional = true }
