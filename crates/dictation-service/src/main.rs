@@ -1,4 +1,12 @@
-use clap::Parser;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::time::Instant;
+
+use clap::{Parser, Subcommand, ValueEnum};
+use dictation_service::config::parse_model;
+use dictation_service::engine::Engine;
+use whisper_burn::audio::decode::decode_to_mono_f32;
+use whisper_burn::backends::{BackendChoice, cpu_device, default_device};
 
 #[derive(Parser)]
 #[command(
@@ -6,8 +14,86 @@ use clap::Parser;
     version,
     about = "Push-to-talk dictation with whisper-burn"
 )]
-struct Args {}
+struct Args {
+    #[command(subcommand)]
+    command: Option<Cmd>,
+}
 
-fn main() {
-    let _ = Args::parse();
+#[derive(Clone, Copy, ValueEnum)]
+enum Device {
+    Auto,
+    Cpu,
+}
+
+#[derive(Subcommand)]
+enum Cmd {
+    /// Developer tool: transcribe an audio file from a local model folder.
+    #[command(hide = true)]
+    TranscribeFile {
+        path: PathBuf,
+        #[arg(long)]
+        model_dir: PathBuf,
+        #[arg(long, default_value = "ivrit-turbo")]
+        model: String,
+        #[arg(long)]
+        language: Option<String>,
+        #[arg(long, value_enum, default_value_t = Device::Auto)]
+        device: Device,
+        /// Transcribe this many times to separate warm-up from steady state.
+        #[arg(long, default_value_t = 1)]
+        repeat: u32,
+    },
+}
+
+fn main() -> ExitCode {
+    match Args::parse().command {
+        None => ExitCode::SUCCESS,
+        Some(Cmd::TranscribeFile {
+            path,
+            model_dir,
+            model,
+            language,
+            device,
+            repeat,
+        }) => match transcribe_file(&path, &model_dir, &model, language, device, repeat) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
+    }
+}
+
+fn transcribe_file(
+    path: &Path,
+    model_dir: &Path,
+    model: &str,
+    language: Option<String>,
+    device: Device,
+    repeat: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let size = parse_model(model).ok_or("unknown model")?;
+    let (pcm, rate) = decode_to_mono_f32(path)?;
+    let choice = match device {
+        Device::Auto => default_device(),
+        Device::Cpu => BackendChoice::Cpu(cpu_device()),
+    };
+
+    let t = Instant::now();
+    let engine = Engine::load_on(size, model_dir, choice)?;
+    println!(
+        "backend={} load_ms={}",
+        engine.backend_name(),
+        t.elapsed().as_millis()
+    );
+    println!("audio_s={:.1}", pcm.len() as f64 / rate as f64);
+
+    for run in 1..=repeat {
+        let t = Instant::now();
+        let text = engine.transcribe_pcm(&pcm, rate, language.as_deref())?;
+        println!("run={run} elapsed_ms={}", t.elapsed().as_millis());
+        println!("{text}");
+    }
+    Ok(())
 }
