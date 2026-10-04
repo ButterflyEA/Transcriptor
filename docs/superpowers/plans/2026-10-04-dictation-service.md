@@ -71,7 +71,7 @@ crates/dictation-service/
 
 **Produces:** crate `dictation-service`, lib name `dictation_service`, binary `dictation`.
 
-- [ ] **Step 1: Add the workspace member**
+- [x] **Step 1: Add the workspace member**
 
 In `Cargo.toml` change members to:
 ```toml
@@ -79,7 +79,7 @@ members = ["crates/whisper-burn", "crates/whisper-burn-cli", "crates/transcripto
 ```
 Add to `[workspace.dependencies]`: `toml = "0.8"`, `dirs = "6"`.
 
-- [ ] **Step 2: Create `crates/dictation-service/Cargo.toml`**
+- [x] **Step 2: Create `crates/dictation-service/Cargo.toml`**
 
 ```toml
 [package]
@@ -112,7 +112,7 @@ thiserror.workspace = true
 evdev = { version = "0.13", optional = true }
 ```
 
-- [ ] **Step 3: Create `src/lib.rs` and `src/main.rs`**
+- [x] **Step 3: Create `src/lib.rs` and `src/main.rs`**
 
 `src/lib.rs`: leave it empty in this task (modules are added as they are created).
 `src/main.rs`:
@@ -128,16 +128,16 @@ fn main() {
 }
 ```
 
-- [ ] **Step 4: Edit the spec**
+- [x] **Step 4: Edit the spec**
 
 In the spec: replace the engine bullet's "Requires a public entry point ... part of this work." with "Uses the existing `whisper_burn::transcribe` (takes in-memory PCM and a sample rate; resamples internally). No `whisper-burn` change needed."; in **capture** replace "downmixes to mono and resamples to 16 kHz (reusing `rubato`)" with "downmixes to mono and reports its native sample rate (whisper-burn resamples)"; in **ui** state "settings window runs as a separate `dictation settings` process (eframe) because tray and egui each need the main-thread event loop; it signals the service with `reload`".
 
-- [ ] **Step 5: Verify build**
+- [x] **Step 5: Verify build**
 
 Run: `cargo build -p dictation-service`
 Expected: compiles.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add Cargo.toml crates/dictation-service docs/superpowers/specs
@@ -164,7 +164,7 @@ pub fn default_path() -> PathBuf
 pub enum ConfigError { Io(String), Parse(String), Invalid(String) }
 ```
 
-- [ ] **Step 1: Write failing tests** in `tests/config.rs`
+- [x] **Step 1: Write failing tests** in `tests/config.rs`
 
 ```rust
 use dictation_service::config::Config;
@@ -216,12 +216,12 @@ fn rejects_bad_values() {
 }
 ```
 
-- [ ] **Step 2: Run to confirm failure**
+- [x] **Step 2: Run to confirm failure**
 
 Run: `cargo test -p dictation-service --test config`
 Expected: FAIL (unresolved import `dictation_service::config`).
 
-- [ ] **Step 3: Implement `src/config.rs`**
+- [x] **Step 3: Implement `src/config.rs`**
 
 ```rust
 use std::path::{Path, PathBuf};
@@ -333,12 +333,12 @@ pub fn default_path() -> PathBuf {
 ```
 Add `pub mod config;` to `lib.rs`.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `cargo test -p dictation-service --test config`
 Expected: 4 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/dictation-service
@@ -370,7 +370,7 @@ impl Engine {
 }
 ```
 
-- [ ] **Step 1: Failing unit test for `join_segments`** (in `tests/engine.rs`)
+- [x] **Step 1: Failing unit test for `join_segments`** (in `tests/engine.rs`)
 
 ```rust
 use dictation_service::engine::join_segments;
@@ -392,9 +392,9 @@ fn empty_is_empty() {
 }
 ```
 
-- [ ] **Step 2: Run, expect FAIL** — `cargo test -p dictation-service --test engine` (unresolved `engine`).
+- [x] **Step 2: Run, expect FAIL** — `cargo test -p dictation-service --test engine` (unresolved `engine`).
 
-- [ ] **Step 3: Implement `src/engine.rs`**
+- [x] **Step 3: Implement `src/engine.rs`**
 
 ```rust
 use burn::backend::ndarray::NdArray;
@@ -459,11 +459,11 @@ impl Engine {
 ```
 Add `pub mod engine;` to `lib.rs`. If `TranscriptionSegment` is not re-exported at the paths above, use the full module paths seen in `crates/whisper-burn/src/lib.rs`.
 
-- [ ] **Step 4: Run unit tests** — `cargo test -p dictation-service --test engine`; Expected: 2 passed.
+- [x] **Step 4: Run unit tests** — `cargo test -p dictation-service --test engine`; Expected: 2 passed.
 
-- [ ] **Step 5: Add `resolve_model_dir` tests** (temp dirs): configured dir wins when it has `model.safetensors`; falls back to `exe_dir/models/ivrit-turbo`; returns `None` when no candidate has the file (this is the "missing model, no download" error path). Run and expect pass.
+- [x] **Step 5: Add `resolve_model_dir` tests** (temp dirs): configured dir wins when it has `model.safetensors`; falls back to `exe_dir/models/ivrit-turbo`; returns `None` when no candidate has the file (this is the "missing model, no download" error path). Run and expect pass.
 
-- [ ] **Step 6: Add ignored integration test** (needs the model in `DICTATION_MODEL_DIR`)
+- [x] **Step 6: Add ignored integration test** (needs the model in `DICTATION_MODEL_DIR`)
 
 ```rust
 #[test]
@@ -478,7 +478,7 @@ fn transcribes_silence_without_error() {
 ```
 Run: `cargo test -p dictation-service --test engine -- --ignored`; Expected: pass.
 
-- [ ] **Step 7: Commit** — `feat(dictation): offline engine over whisper-burn` (with trailer).
+- [x] **Step 7: Commit** — `feat(dictation): offline engine over whisper-burn` (with trailer).
 
 ### Task 1.2: Dev subcommand `transcribe-file` (warm-up and latency check)
 
@@ -486,10 +486,10 @@ Run: `cargo test -p dictation-service --test engine -- --ignored`; Expected: pas
 
 Add a hidden subcommand that decodes a file with `whisper_burn::audio::decode::decode_to_mono_f32`, loads the model from a directory, runs `Engine::transcribe_pcm`, and prints text plus `load_ms=` and `elapsed_ms=`.
 
-- [ ] **Step 1:** Replace `Args` with a clap `Subcommand` enum containing `#[command(hide = true)] TranscribeFile { path: PathBuf, #[arg(long)] model_dir: PathBuf, #[arg(long, default_value = "ivrit-turbo")] model: String, #[arg(long)] language: Option<String> }`; resolve `model` with `config::parse_model`.
-- [ ] **Step 2:** Run `cargo run --release -p dictation-service -- transcribe-file <some.wav> --model-dir <dir> --language he`. Expected: transcript + timings.
-- [ ] **Step 3:** Record load and transcribe latency for a 5 s clip in the PR description.
-- [ ] **Step 4:** Commit `feat(dictation): transcribe-file dev command`.
+- [x] **Step 1:** Replace `Args` with a clap `Subcommand` enum containing `#[command(hide = true)] TranscribeFile { path: PathBuf, #[arg(long)] model_dir: PathBuf, #[arg(long, default_value = "ivrit-turbo")] model: String, #[arg(long)] language: Option<String> }`; resolve `model` with `config::parse_model`.
+- [x] **Step 2:** Run `cargo run --release -p dictation-service -- transcribe-file <some.wav> --model-dir <dir> --language he`. Expected: transcript + timings.
+- [x] **Step 3:** Record load and transcribe latency for a 5 s clip in the PR description.
+- [x] **Step 4:** Commit `feat(dictation): transcribe-file dev command`.
 
 ### Task 1.3: SPIKE — fit the Hebrew model in 4 GB VRAM (decision gate)
 
@@ -497,9 +497,9 @@ Add a hidden subcommand that decodes a file with `whisper_burn::audio::decode::d
 
 **Question:** Does `ivrit-ai/whisper-large-v3-turbo` load and transcribe a 30 s Hebrew clip within 4 GB VRAM, and in what precision?
 
-- [ ] **Step 1: Obtain the model on a connected machine** (one-time): download `config.json` and `model.safetensors` from `https://huggingface.co/ivrit-ai/whisper-large-v3-turbo` into a local folder (`<dir>`). Record the sha256 of `model.safetensors` for the installer manifest.
-- [ ] **Step 2: Baseline f32.** Run `transcribe-file` on a 5 s and a 30 s Hebrew clip with `--language he`. While it runs, record peak GPU memory (Windows: Task Manager "Dedicated GPU memory" or `nvidia-smi --query-gpu=memory.used --format=csv -l 1`; Linux: `nvidia-smi`/`radeontop`) and peak process RAM. Record whether load succeeds on a GPU limited to 4 GB (the target card, or force a cap) and whether output is correct Hebrew.
-- [ ] **Step 2b: Check dimensions.** Confirm `Whisper::load` accepts the checkpoint with `ModelSize::LargeV3Turbo` (it validates dims); if it rejects it, note the exact error — a new `ModelSize` variant in `whisper-burn` becomes a prerequisite task.
+- [x] **Step 1: Obtain the model on a connected machine** (one-time): download `config.json` and `model.safetensors` from `https://huggingface.co/ivrit-ai/whisper-large-v3-turbo` into a local folder (`<dir>`). Record the sha256 of `model.safetensors` for the installer manifest.
+- [x] **Step 2: Baseline f32.** Run `transcribe-file` on a 5 s and a 30 s Hebrew clip with `--language he`. While it runs, record peak GPU memory (Windows: Task Manager "Dedicated GPU memory" or `nvidia-smi --query-gpu=memory.used --format=csv -l 1`; Linux: `nvidia-smi`/`radeontop`) and peak process RAM. Record whether load succeeds on a GPU limited to 4 GB (the target card, or force a cap) and whether output is correct Hebrew.
+- [x] **Step 2b: Check dimensions.** Confirm `Whisper::load` accepts the checkpoint with `ModelSize::LargeV3Turbo` (it validates dims); if it rejects it, note the exact error — a new `ModelSize` variant in `whisper-burn` becomes a prerequisite task.
 - [ ] **Step 3: If f32 does not fit with headroom (peak > ~3.6 GB), try f16.** Check whether `burn::backend::wgpu::Wgpu<half::f16>` (or burn's f16 element type) is usable on the target adapter in a throwaway branch of `whisper-burn`: make `Whisper<B>` generic use f16 elements, load the F16-converted weights, compare the transcript to the f32 output on the same clips (character diff) and re-measure VRAM.
 - [ ] **Step 4: Write up** results as a table (precision, peak VRAM, peak RAM, load s, 5 s latency, 30 s latency, transcript diff vs f32) in the PR description.
 - [ ] **Step 5: Decision gate — STOP and ask the user** to pick one of: (a) ship f32 ivrit turbo; (b) add f16 compute to `whisper-burn` (becomes a new task in this sprint, with golden tests unaffected for f32); (c) fall back to a smaller model (e.g. a Hebrew fine-tune of `whisper-small`, which needs weight-format and dims checks). Record the choice in the spec ("Model handling") and set `Config::default().model` accordingly.
@@ -523,7 +523,7 @@ pub fn downmix_to_mono(interleaved: &[f32], channels: u16) -> Vec<f32>
 pub const MIN_RECORDING_MS: u64 = 300;
 ```
 
-- [ ] **Step 1: Failing tests** (`tests/audio.rs`)
+- [x] **Step 1: Failing tests** (`tests/audio.rs`)
 
 ```rust
 use dictation_service::audio::{Recording, downmix_to_mono};
@@ -549,8 +549,8 @@ fn duration_ms_from_rate() {
     assert_eq!(r.duration_ms(), 500);
 }
 ```
-- [ ] **Step 2:** Run `cargo test -p dictation-service --test audio`; expect FAIL.
-- [ ] **Step 3: Implement**
+- [x] **Step 2:** Run `cargo test -p dictation-service --test audio`; expect FAIL.
+- [x] **Step 3: Implement**
 
 ```rust
 pub const MIN_RECORDING_MS: u64 = 300;
@@ -576,8 +576,8 @@ pub fn downmix_to_mono(interleaved: &[f32], channels: u16) -> Vec<f32> {
         .collect()
 }
 ```
-- [ ] **Step 4:** Run tests; expect 4 passed.
-- [ ] **Step 5:** Commit `feat(dictation): recording type and downmix`.
+- [x] **Step 4:** Run tests; expect 4 passed.
+- [x] **Step 5:** Commit `feat(dictation): recording type and downmix`.
 
 ### Task 2.2: cpal Recorder
 
@@ -594,11 +594,11 @@ impl CpalRecorder { pub fn new(device_name: Option<String>, max_secs: u32) -> Se
 ```
 `cpal::Stream` is `!Send`, so `CpalRecorder` runs a dedicated thread owning the stream and exchanging `Start`/`Stop(reply Sender)` messages over `std::sync::mpsc`. Samples go into an `Arc<Mutex<Vec<f32>>>` capped at `max_secs * rate` (extra samples dropped). Handle `SampleFormat::{F32,I16,U16}` by converting to f32 before `downmix_to_mono`.
 
-- [ ] **Step 1:** Implement the thread + trait. Device selection: by exact name if set and found, otherwise default input device; return `Err("no input device")` when none.
-- [ ] **Step 2:** Add hidden `record-test --secs N` subcommand: start, sleep N, stop, print `samples`, `rate`, `peak`.
-- [ ] **Step 3:** Manual check: run it and speak. Expected: peak > 0.05; with mic muted peak ≈ 0.
-- [ ] **Step 4:** Add a unit test for the cap using a helper `push_capped(buf: &mut Vec<f32>, chunk: &[f32], max: usize)` (extracted so it is testable): `push_capped(&mut v, &[1.0;5], 3)` leaves `v.len() == 3`.
-- [ ] **Step 5:** Commit `feat(dictation): cpal recorder`.
+- [x] **Step 1:** Implement the thread + trait. Device selection: by exact name if set and found, otherwise default input device; return `Err("no input device")` when none.
+- [x] **Step 2:** Add hidden `record-test --secs N` subcommand: start, sleep N, stop, print `samples`, `rate`, `peak`.
+- [x] **Step 3:** Manual check: run it and speak. Expected: peak > 0.05; with mic muted peak ≈ 0.
+- [x] **Step 4:** Add a unit test for the cap using a helper `push_capped(buf: &mut Vec<f32>, chunk: &[f32], max: usize)` (extracted so it is testable): `push_capped(&mut v, &[1.0;5], 3)` leaves `v.len() == 3`.
+- [x] **Step 5:** Commit `feat(dictation): cpal recorder`.
 
 ---
 
