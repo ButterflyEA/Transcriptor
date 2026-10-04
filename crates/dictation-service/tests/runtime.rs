@@ -1,0 +1,106 @@
+use std::path::PathBuf;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use dictation_service::audio::{Recorder, Recording};
+use dictation_service::config::Config;
+use dictation_service::controller::{Input, Status};
+use dictation_service::output::{PasteOutcome, Paster};
+use dictation_service::runtime::spawn_with;
+use whisper_burn::audio::decode::decode_to_mono_f32;
+
+struct FakeRecorder(Recording);
+impl Recorder for FakeRecorder {
+    fn start(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+    fn stop(&mut self) -> Result<Recording, String> {
+        Ok(self.0.clone())
+    }
+}
+
+struct FakePaster(Arc<Mutex<Vec<String>>>);
+impl Paster for FakePaster {
+    fn paste(&mut self, text: &str) -> Result<PasteOutcome, String> {
+        self.0.lock().unwrap().push(text.to_owned());
+        Ok(PasteOutcome::Pasted)
+    }
+}
+
+#[test]
+fn missing_model_reports_failure_and_never_records() {
+    let dir = std::env::temp_dir().join("dictation-no-model");
+    let cfg = Config {
+        model_dir: Some(dir),
+        ..Config::default()
+    };
+    let (ntx, nrx) = mpsc::channel();
+    let pasted = Arc::new(Mutex::new(Vec::new()));
+    let rt = spawn_with(
+        cfg,
+        Box::new(FakeRecorder(Recording {
+            samples: vec![0.0; 16_000],
+            sample_rate: 16_000,
+        })),
+        Box::new(FakePaster(pasted.clone())),
+        Box::new(|_| {}),
+        Box::new(move |m| {
+            let _ = ntx.send(m);
+        }),
+    );
+    let msg = nrx.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert!(msg.contains("model not found"), "{msg}");
+    rt.shutdown();
+    assert!(pasted.lock().unwrap().is_empty());
+}
+
+/// Needs DICTATION_MODEL_DIR and the Hebrew sample clip at the repo root.
+#[test]
+#[ignore]
+fn end_to_end_hebrew_dictation_pastes_text() {
+    let model_dir = PathBuf::from(std::env::var("DICTATION_MODEL_DIR").unwrap());
+    let wav = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_16000_mono.wav");
+    let (samples, sample_rate) = decode_to_mono_f32(&wav).unwrap();
+
+    let cfg = Config {
+        model_dir: Some(model_dir),
+        language: "he".into(),
+        ..Config::default()
+    };
+    let (stx, srx) = mpsc::channel();
+    let pasted = Arc::new(Mutex::new(Vec::new()));
+    let rt = spawn_with(
+        cfg,
+        Box::new(FakeRecorder(Recording {
+            samples,
+            sample_rate,
+        })),
+        Box::new(FakePaster(pasted.clone())),
+        Box::new(move |s| {
+            let _ = stx.send(s);
+        }),
+        Box::new(|m| eprintln!("notify: {m}")),
+    );
+    let wait_for = |want: Status| loop {
+        let s = srx.recv_timeout(Duration::from_secs(120)).expect("status");
+        if s == want {
+            break;
+        }
+    };
+    wait_for(Status::Idle);
+    rt.send(Input::Press);
+    wait_for(Status::Recording);
+    rt.send(Input::Release);
+    wait_for(Status::Transcribing);
+    wait_for(Status::Idle);
+    rt.shutdown();
+
+    let got = pasted.lock().unwrap().clone();
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert!(
+        got[0].contains("\u{5e9}\u{5dc}\u{5d5}\u{5dd}"),
+        "{}",
+        got[0]
+    );
+}

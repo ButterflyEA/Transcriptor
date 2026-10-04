@@ -23,6 +23,8 @@ dirs.workspace = true
 clap.workspace = true
 log.workspace = true
 cpal = "0.15"
+arboard = "3"
+enigo = "0.3"
 thiserror.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]

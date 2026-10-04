@@ -4,8 +4,11 @@ use std::time::Instant;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use dictation_service::audio::{CpalRecorder, Recorder};
-use dictation_service::config::parse_model;
+use dictation_service::config::{self, Config, parse_model};
+use dictation_service::controller::Input;
 use dictation_service::engine::Engine;
+use dictation_service::output::{PasteOutcome, system_paster};
+use dictation_service::runtime::spawn;
 use whisper_burn::audio::decode::decode_to_mono_f32;
 use whisper_burn::backends::{BackendChoice, cpu_device, default_device};
 
@@ -28,6 +31,12 @@ enum Device {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Run the dictation service in the foreground (default). Until global
+    /// hotkeys arrive, type `s` + Enter to start, `e` + Enter to stop, `q` to quit.
+    Run,
+    /// Developer tool: copy text to the clipboard and paste it after 3 seconds.
+    #[command(hide = true)]
+    PasteTest { text: String },
     /// Developer tool: record from the microphone and print level stats.
     #[command(hide = true)]
     RecordTest {
@@ -56,7 +65,8 @@ enum Cmd {
 
 fn main() -> ExitCode {
     match Args::parse().command {
-        None => ExitCode::SUCCESS,
+        None | Some(Cmd::Run) => report(run()),
+        Some(Cmd::PasteTest { text }) => report(paste_test(&text)),
         Some(Cmd::RecordTest { secs, device }) => match record_test(secs, device) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
@@ -123,5 +133,45 @@ fn record_test(secs: u64, device: Option<String>) -> Result<(), String> {
     println!("rate={}", r.sample_rate);
     println!("duration_ms={}", r.duration_ms());
     println!("peak={:.4}", r.peak());
+    Ok(())
+}
+
+fn report(result: Result<(), Box<dyn std::error::Error>>) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn paste_test(text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!("focus a text box; pasting in 3 seconds...");
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    match system_paster(50).paste(text)? {
+        PasteOutcome::Pasted => eprintln!("pasted"),
+        PasteOutcome::ClipboardOnly(why) => eprintln!("clipboard only: {why}"),
+    }
+    Ok(())
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let config: Config = Config::load_from(&config::default_path())?;
+    config.validate()?;
+    let rt = spawn(
+        config,
+        Box::new(|s| eprintln!("status: {s:?}")),
+        Box::new(|m| eprintln!("notice: {m}")),
+    );
+    for line in std::io::stdin().lines() {
+        match line?.trim() {
+            "s" => rt.send(Input::Press),
+            "e" => rt.send(Input::Release),
+            "q" => break,
+            _ => {}
+        }
+    }
+    rt.shutdown();
     Ok(())
 }

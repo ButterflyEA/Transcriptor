@@ -623,7 +623,7 @@ impl Controller { pub fn new(queue_cap: usize) -> Self;
 ```
 Rules: nothing is recorded or transcribed until `EngineReady`... except presses while `Loading` are ignored with `Notify("model still loading")`. `Press` while recording is ignored; `Release` while not recording is ignored. `Captured` shorter than `MIN_RECORDING_MS` is discarded silently. If the engine is busy the recording is queued; if the queue already holds `queue_cap` jobs, drop it and `Notify("queue full")`. On `Transcribed(Ok(text))` with empty text: no paste. Status priority: Recording > Transcribing > Idle.
 
-- [ ] **Step 1: Failing tests** (`tests/controller.rs`)
+- [x] **Step 1: Failing tests** (`tests/controller.rs`)
 
 ```rust
 use dictation_service::audio::Recording;
@@ -718,8 +718,8 @@ fn double_press_and_stray_release_are_ignored() {
     assert!(c.handle(Input::Release).is_empty());
 }
 ```
-- [ ] **Step 2:** Run `cargo test -p dictation-service --test controller`; expect FAIL.
-- [ ] **Step 3: Implement `src/controller.rs`**
+- [x] **Step 2:** Run `cargo test -p dictation-service --test controller`; expect FAIL.
+- [x] **Step 3: Implement `src/controller.rs`**
 
 ```rust
 use std::collections::VecDeque;
@@ -842,8 +842,8 @@ impl Controller {
 ```
 Note: `EngineFailed` leaves `ready == false`, so later presses get "model still loading"; Task 7.1 refines this so the Error status persists.
 
-- [ ] **Step 4:** Run tests until all 8 pass.
-- [ ] **Step 5:** Commit `feat(dictation): controller state machine`.
+- [x] **Step 4:** Run tests until all 8 pass.
+- [x] **Step 5:** Commit `feat(dictation): controller state machine`.
 
 ### Task 3.2: Output (clipboard + paste)
 
@@ -858,22 +858,22 @@ pub fn is_wayland() -> bool       // XDG_SESSION_TYPE == "wayland" || WAYLAND_DI
 pub fn pick_paste_tool(has: impl Fn(&str) -> bool) -> Option<&'static str>   // "wtype" then "ydotool"
 ```
 
-- [ ] **Step 1: Failing test** for `pick_paste_tool` in `tests/output.rs`:
+- [x] **Step 1: Failing test** for `pick_paste_tool` in `tests/output.rs`:
 ```rust
 use dictation_service::output::pick_paste_tool;
 #[test] fn prefers_wtype() { assert_eq!(pick_paste_tool(|_| true), Some("wtype")); }
 #[test] fn falls_back_to_ydotool() { assert_eq!(pick_paste_tool(|t| t == "ydotool"), Some("ydotool")); }
 #[test] fn none_when_missing() { assert_eq!(pick_paste_tool(|_| false), None); }
 ```
-- [ ] **Step 2:** Run, expect FAIL.
-- [ ] **Step 3: Implement.** Always set the clipboard first via `arboard::Clipboard::set_text` (on Wayland prefer `wl-copy` via `std::process::Command` when `arboard` fails). Then sleep `paste_delay_ms` and synthesize paste:
+- [x] **Step 2:** Run, expect FAIL.
+- [x] **Step 3: Implement.** Always set the clipboard first via `arboard::Clipboard::set_text` (on Wayland prefer `wl-copy` via `std::process::Command` when `arboard` fails). Then sleep `paste_delay_ms` and synthesize paste:
   - Windows / X11: `enigo` Ctrl+V (`Key::Control` press, `Key::Unicode('v')` click, release).
   - Wayland: `wtype -M ctrl v -m ctrl` or `ydotool key 29:1 47:1 47:0 29:0`; if neither tool exists return `PasteOutcome::ClipboardOnly("install wtype or ydotool")`.
   - If synthesis fails, return `ClipboardOnly(err)` (text is already on the clipboard).
   `which`-style presence check: `Command::new(tool).arg("--version")` spawn succeeds.
-- [ ] **Step 4:** Run unit tests; expect 3 passed.
-- [ ] **Step 5: Manual check:** add hidden `paste-test "text"` subcommand (sleeps 3 s so you can focus a text box, then pastes). Verify on Windows and one Linux session.
-- [ ] **Step 6:** Commit `feat(dictation): clipboard and paste output`.
+- [x] **Step 4:** Run unit tests; expect 3 passed.
+- [x] **Step 5: Manual check:** add hidden `paste-test "text"` subcommand (sleeps 3 s so you can focus a text box, then pastes). Verify on Windows and one Linux session.
+- [x] **Step 6:** Commit `feat(dictation): clipboard and paste output`.
 
 ### Task 3.3: Runtime wiring and `run`
 
@@ -895,10 +895,10 @@ Design: one coordinator thread owns `Controller` and `Receiver<RuntimeMsg>`. Exe
 - `SetStatus` / `Notify` → callbacks.
 Engine thread resolves the model dir with `resolve_model_dir(config.model_dir, exe_dir, dirs::data_dir())`; `None` → `EngineFailed("model not found; expected <paths>")` (no download is ever attempted), otherwise loads and sends `EngineReady`/`EngineFailed`. Recorder `max_secs` auto-stop: a timer thread started on `StartCapture` sends `Input::Release` after `max_record_secs` if still recording (controller ignores a stray release).
 
-- [ ] **Step 1:** Implement `runtime.rs` as above.
-- [ ] **Step 2:** In `main.rs`, `run` (default) subcommand: load config, `spawn`, print status/notify to stderr, and read stdin lines `s` → `Input::Press`, `e` → `Input::Release`, `q` → Shutdown (temporary dev trigger; removed in Sprint 5).
-- [ ] **Step 3: Manual E2E:** `cargo run -p dictation-service -- run`, wait for the "Idle" status line, type `s` + Enter, speak, type `e` + Enter. Because the terminal has focus when you type, set `paste_delay_ms = 4000` in the config for this check: after typing `e`, click into a text editor before the delay ends. Expected: text pasted there and on the clipboard (Sprint 4 removes this awkwardness).
-- [ ] **Step 4:** `cargo test -p dictation-service` all green; commit `feat(dictation): runtime wiring`.
+- [x] **Step 1:** Implement `runtime.rs` as above.
+- [x] **Step 2:** In `main.rs`, `run` (default) subcommand: load config, `spawn`, print status/notify to stderr, and read stdin lines `s` → `Input::Press`, `e` → `Input::Release`, `q` → Shutdown (temporary dev trigger; removed in Sprint 5).
+- [x] **Step 3: Manual E2E:** `cargo run -p dictation-service -- run`, wait for the "Idle" status line, type `s` + Enter, speak, type `e` + Enter. Because the terminal has focus when you type, set `paste_delay_ms = 4000` in the config for this check: after typing `e`, click into a text editor before the delay ends. Expected: text pasted there and on the clipboard (Sprint 4 removes this awkwardness).
+- [x] **Step 4:** `cargo test -p dictation-service` all green; commit `feat(dictation): runtime wiring`.
 
 ---
 

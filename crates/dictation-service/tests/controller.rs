@@ -83,7 +83,10 @@ fn queue_is_capped() {
     record(&mut c, 1000); // running
     record(&mut c, 1000); // queued 1/1
     let a = record(&mut c, 1000); // dropped
-    assert!(has(&a, |x| matches!(x, Action::Notify(m) if m.contains("queue"))));
+    assert!(has(
+        &a,
+        |x| matches!(x, Action::Notify(m) if m.contains("queue"))
+    ));
 }
 
 #[test]
