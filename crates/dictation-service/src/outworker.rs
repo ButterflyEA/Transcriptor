@@ -3,6 +3,7 @@
 use std::sync::mpsc::{self, Sender};
 use std::thread::{self, JoinHandle};
 
+use crate::activity;
 use crate::output::{PasteOutcome, Paster};
 use crate::typer::Typer;
 
@@ -41,14 +42,18 @@ impl OutWorker {
                             Err(e) => notify(format!("paste failed: {e}")),
                         },
                         Job::Type(text) => {
+                            activity::begin_typing();
                             if let Err(e) = typer.type_text(&text) {
                                 notify(e);
                             }
+                            activity::end_typing();
                         }
                         Job::Backspace(n) => {
+                            activity::begin_typing();
                             if let Err(e) = typer.backspace(n) {
                                 notify(e);
                             }
+                            activity::end_typing();
                         }
                         Job::SetClipboard(text) => {
                             if let Err(e) = paster.set_clipboard(&text) {

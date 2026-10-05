@@ -349,9 +349,9 @@ Loop rules: take `snapshot_from(window_start)`; skip when shorter than `stream_w
 
 ### Task E.1: Type edits and finalise
 
-- [ ] **Step 1:** Failing runtime test with fake typer: `Edit::Append("x")` becomes `Job::Type("x")`; `Edit::Replace{backspaces: n, text}` becomes `Job::Backspace(n)` then `Job::Type(text)`; final correction is one edit; the clipboard `Paste`-free `SetClipboard` job runs once with the full text.
-- [ ] **Step 2:** Add `Job::SetClipboard(String)`; wire the stream events to the output worker; on stop run the final pass, `Transcript::finish`, send the single correction, then the clipboard job, then `flush()`.
-- [ ] **Step 3:** Tests pass; commit `feat(dictation): live typing and finalise`.
+- [x] **Step 1:** Failing runtime test with fake typer: `Edit::Append("x")` becomes `Job::Type("x")`; `Edit::Replace{backspaces: n, text}` becomes `Job::Backspace(n)` then `Job::Type(text)`; final correction is one edit; the clipboard `Paste`-free `SetClipboard` job runs once with the full text.
+- [x] **Step 2:** Add `Job::SetClipboard(String)`; wire the stream events to the output worker; on stop run the final pass, `Transcript::finish`, send the single correction, then the clipboard job, then `flush()`.
+- [x] **Step 3:** Tests pass; commit `feat(dictation): live typing and finalise`.
 
 ### Task E.2: Interference lock
 
@@ -362,15 +362,15 @@ Loop rules: take `snapshot_from(window_start)`; skip when shorter than `stream_w
 **Interfaces:**
 - Produces `Input::UserActivity` sent by the hotkey backend (rdev already sees keys and mouse) and a foreground-window-changed check on Windows (`GetForegroundWindow` compared before each edit; behind a small `fn foreground_id() -> Option<u64>` returning `None` off Windows).
 
-- [ ] **Step 1:** Failing test: after `UserActivity`, subsequent edits are `Append` only; typed text so far is treated as locked.
-- [ ] **Step 2:** Implement; ensure the chord itself and our own injected events do not trigger it (ignore events while the typer is sending and for 100 ms after).
-- [ ] **Step 3:** Commit `feat(dictation): lock corrections on user interference`.
+- [x] **Step 1:** Failing test: after `UserActivity`, subsequent edits are `Append` only; typed text so far is treated as locked.
+- [x] **Step 2:** Implement; ensure the chord itself and our own injected events do not trigger it (ignore events while the typer is sending and for 100 ms after).
+- [x] **Step 3:** Commit `feat(dictation): lock corrections on user interference`.
 
 ### Task E.3: Safety limits
 
-- [ ] **Step 1:** Failing test: `Backspace(n)` with `n` greater than the tracked tail length is clamped to the tail length and logged.
-- [ ] **Step 2:** Implement the clamp in the output path; disable corrections when `typer.supports_backspace()` is false (Wayland).
-- [ ] **Step 3:** Commit `feat(dictation): backspace safety limits`.
+- [x] **Step 1:** Failing test: `Backspace(n)` with `n` greater than the tracked tail length is clamped to the tail length and logged.
+- [x] **Step 2:** Implement the clamp in the output path; disable corrections when `typer.supports_backspace()` is false (Wayland).
+- [x] **Step 3:** Commit `feat(dictation): backspace safety limits`.
 
 ### Task E.4: Manual compatibility matrix and QA
 

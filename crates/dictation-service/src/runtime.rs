@@ -7,14 +7,15 @@ use std::time::Duration;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::activity::{self, plan_sync};
 use crate::audio::{CpalRecorder, LiveTap, Recorder, Recording};
 use crate::config::{Config, parse_model};
 use crate::controller::{Action, Controller, Input, Status};
-use crate::transcript::Edit;
 use crate::engine::{Engine, resolve_model_dir};
 use crate::output::{Paster, system_paster};
 use crate::outworker::{Job as OutJob, OutWorker};
 use crate::stream::{EngineDecoder, StreamEvent, StreamLoop, StreamParams};
+use crate::transcript::Edit;
 use crate::typer::{NullTyper, Typer, system_typer};
 
 pub enum RuntimeMsg {
@@ -193,7 +194,14 @@ pub fn spawn(config: Config, on_status: StatusFn, on_notify: NotifyFn) -> Runtim
     } else {
         Box::new(NullTyper)
     };
-    spawn_with_typer(config, Box::new(recorder), paster, typer, on_status, on_notify)
+    spawn_with_typer(
+        config,
+        Box::new(recorder),
+        paster,
+        typer,
+        on_status,
+        on_notify,
+    )
 }
 
 /// Like `spawn_with_typer`, with typing disabled.
@@ -224,6 +232,8 @@ pub fn spawn_with_typer(
     on_notify: NotifyFn,
 ) -> Runtime {
     let typing_enabled = config.stream && typer.is_enabled();
+    // Without backspace (Wayland) text can only be appended.
+    let append_only = !typer.supports_backspace();
     let (tx, rx) = mpsc::channel::<RuntimeMsg>();
     let (job_tx, job_rx) = mpsc::channel::<Job>();
 
@@ -253,9 +263,7 @@ pub fn spawn_with_typer(
             let mut pending: VecDeque<Input> = VecDeque::new();
             let mut paused = false;
             let mut stream_stop: Option<Arc<AtomicBool>> = None;
-            let mut live_typing = false;
-            // Everything typed into the focused window for the current capture.
-            let mut typed = String::new();
+            let mut live: Option<LiveText> = None;
             on_status(Status::Loading);
 
             while let Ok(msg) = rx.recv() {
@@ -287,9 +295,11 @@ pub fn spawn_with_typer(
                     }
                     RuntimeMsg::Input(Input::Release) if config.stream => {}
                     RuntimeMsg::Stream(StreamEvent::Edit { capture_id, edit }) => {
-                        if live_typing && capture_id == capture_no {
-                            apply_edit(&out, &mut typed, edit);
-                        } else if !live_typing {
+                        if let Some(l) = live.as_mut() {
+                            if capture_id == capture_no {
+                                l.apply(&out, edit, &|m| on_notify(m));
+                            }
+                        } else {
                             eprintln!("stream[{capture_id}] {edit:?}");
                         }
                     }
@@ -311,8 +321,7 @@ pub fn spawn_with_typer(
                                     if config.stream && let Some(tap) = recorder.tap() {
                                         let stop = Arc::new(AtomicBool::new(false));
                                         stream_stop = Some(stop.clone());
-                                        live_typing = typing_enabled;
-                                        typed.clear();
+                                        live = typing_enabled.then(|| LiveText::start(append_only));
                                         let _ = job_tx.send(Job::Stream {
                                             tap,
                                             capture_id: capture_no,
@@ -343,9 +352,10 @@ pub fn spawn_with_typer(
                                     )));
                                 }
                             }
-                            Action::Paste(text) if live_typing => {
-                                live_typing = false;
-                                finalise(&out, &mut typed, &text);
+                            Action::Paste(text) if live.is_some() => {
+                                if let Some(mut l) = live.take() {
+                                    l.finish(&out, &text, &|m| on_notify(m));
+                                }
                             }
                             Action::Paste(text) => out.send(OutJob::Paste(text)),
                             Action::SetStatus(s) => {
@@ -364,46 +374,65 @@ pub fn spawn_with_typer(
     Runtime { tx, status, handle }
 }
 
-/// Applies a live edit to the focused window, never deleting more than was typed.
-fn apply_edit(out: &OutWorker, typed: &mut String, edit: Edit) {
-    match edit {
-        Edit::Append(text) => {
-            typed.push_str(&text);
-            out.send(OutJob::Type(text));
-        }
-        Edit::Replace { backspaces, text } => {
-            let n = backspaces.min(typed.chars().count());
-            if n < backspaces {
-                log::warn!("clamped backspace {backspaces} to {n}");
-            }
-            for _ in 0..n {
-                typed.pop();
-            }
-            typed.push_str(&text);
-            if n > 0 {
-                out.send(OutJob::Backspace(n));
-            }
-            out.send(OutJob::Type(text));
-        }
-    }
+/// Live typing for one capture: what we typed follows what the engine says.
+/// Once the user interferes, text is only ever added, never deleted.
+#[derive(Default)]
+struct LiveText {
+    typed: String,
+    model: String,
+    started_ms: u64,
+    locked: bool,
+    warned: bool,
 }
 
-/// Turns what was typed live into the final text with one correction, then
-/// leaves the final text on the clipboard.
-fn finalise(out: &OutWorker, typed: &mut String, final_text: &str) {
-    let common = typed
-        .chars()
-        .zip(final_text.chars())
-        .take_while(|(a, b)| a == b)
-        .count();
-    let backspaces = typed.chars().count() - common;
-    let rest: String = final_text.chars().skip(common).collect();
-    if backspaces > 0 {
-        out.send(OutJob::Backspace(backspaces));
+impl LiveText {
+    fn start(locked: bool) -> Self {
+        Self {
+            locked,
+            started_ms: activity::now_ms(),
+            ..Self::default()
+        }
     }
-    if !rest.is_empty() {
-        out.send(OutJob::Type(rest));
+
+    fn apply(&mut self, out: &OutWorker, edit: Edit, notify: &dyn Fn(String)) {
+        match edit {
+            Edit::Append(t) => self.model.push_str(&t),
+            Edit::Replace { backspaces, text } => {
+                for _ in 0..backspaces.min(self.model.chars().count()) {
+                    self.model.pop();
+                }
+                self.model.push_str(&text);
+            }
+        }
+        let target = self.model.clone();
+        self.sync(out, &target, notify);
     }
-    out.send(OutJob::SetClipboard(final_text.to_owned()));
-    typed.clear();
+
+    fn finish(&mut self, out: &OutWorker, final_text: &str, notify: &dyn Fn(String)) {
+        self.model = final_text.to_owned();
+        self.sync(out, final_text, notify);
+        out.send(OutJob::SetClipboard(final_text.to_owned()));
+    }
+
+    fn sync(&mut self, out: &OutWorker, target: &str, notify: &dyn Fn(String)) {
+        if !self.locked && activity::user_active_since(self.started_ms) {
+            self.locked = true;
+        }
+        let (backspaces, text) = plan_sync(&self.typed, target, self.locked);
+        if self.locked && !self.warned && !self.typed.is_empty() && !target.starts_with(&self.typed)
+        {
+            self.warned = true;
+            notify("You used the keyboard or mouse, so corrections stopped. The final text is on the clipboard.".into());
+        }
+        if backspaces > 0 {
+            for _ in 0..backspaces {
+                self.typed.pop();
+            }
+            out.send(OutJob::Backspace(backspaces));
+        }
+        if !text.is_empty() {
+            self.typed.push_str(&text);
+            out.send(OutJob::Type(text));
+        }
+    }
 }

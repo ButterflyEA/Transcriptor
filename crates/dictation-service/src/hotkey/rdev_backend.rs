@@ -5,6 +5,7 @@ use std::time::Duration;
 use rdev::{EventType, Key};
 
 use super::HotkeyBackend;
+use crate::activity;
 use crate::chord::{Chord, ChordTracker, HotkeyEvent};
 
 pub struct RdevBackend;
@@ -50,14 +51,23 @@ impl HotkeyBackend for RdevBackend {
         thread::Builder::new()
             .name("hotkey-rdev".into())
             .spawn(move || {
+                let chord_keys = chord.keys().clone();
                 let mut tracker = ChordTracker::new(chord);
                 let result = rdev::listen(move |event| {
                     let (key, down) = match event.event_type {
                         EventType::KeyPress(k) => (k, true),
                         EventType::KeyRelease(k) => (k, false),
+                        EventType::ButtonPress(_) => {
+                            activity::note_user_input();
+                            return;
+                        }
                         _ => return,
                     };
-                    if let Some(name) = key_name(key)
+                    let name = key_name(key);
+                    if down && name.as_ref().is_none_or(|n| !chord_keys.contains(n)) {
+                        activity::note_user_input();
+                    }
+                    if let Some(name) = name
                         && let Some(ev) = tracker.feed(&name, down)
                     {
                         on_event(ev);

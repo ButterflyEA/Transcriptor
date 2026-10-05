@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod audio;
 pub mod checksum;
 pub mod chord;
