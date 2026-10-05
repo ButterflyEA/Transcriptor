@@ -3348,6 +3348,7 @@ dependencies = [
  "toml 0.8.2",
  "tray-icon 0.19.3",
  "whisper-burn",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

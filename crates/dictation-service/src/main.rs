@@ -400,6 +400,10 @@ fn send_input(tx: &std::sync::mpsc::Sender<RuntimeMsg>, input: Input) -> String 
 /// Global hotkey: hold to record, release to transcribe. Failure is not fatal,
 /// since `dictation start/stop` still works.
 fn start_hotkey(chord: Chord, label: &str, tx: std::sync::mpsc::Sender<RuntimeMsg>) {
+    if std::env::var_os("DICTATION_NO_HOTKEY").is_some() {
+        eprintln!("hotkey disabled; use `dictation toggle`");
+        return;
+    }
     let Some(backend) = hotkey::select() else {
         eprintln!(
             "no global hotkey backend on this session; bind `dictation start`/`stop` in your compositor (see docs/dictation.md)"

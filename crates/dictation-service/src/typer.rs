@@ -162,6 +162,19 @@ fn key_input(
 impl Typer for WinTyper {
     fn type_text(&mut self, s: &str) -> Result<(), String> {
         use windows_sys::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_KEYUP, KEYEVENTF_UNICODE};
+        match std::env::var("DICTATION_TYPE_MODE").as_deref() {
+            Ok("paste") => return paste_text(s),
+            Ok("paced") => {
+                for unit in s.encode_utf16() {
+                    send_keys(&[key_input(0, unit, KEYEVENTF_UNICODE)])?;
+                    std::thread::sleep(std::time::Duration::from_millis(8));
+                    send_keys(&[key_input(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)])?;
+                    std::thread::sleep(std::time::Duration::from_millis(8));
+                }
+                return Ok(());
+            }
+            _ => {}
+        }
         let mut inputs = Vec::new();
         for unit in s.encode_utf16() {
             inputs.push(key_input(0, unit, KEYEVENTF_UNICODE));
@@ -183,4 +196,23 @@ impl Typer for WinTyper {
     fn supports_backspace(&self) -> bool {
         true
     }
+}
+
+/// Inserts text through the clipboard and Ctrl+V, the path the batch dictation uses.
+#[cfg(windows)]
+fn paste_text(s: &str) -> Result<(), String> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_KEYUP, VK_CONTROL};
+    arboard::Clipboard::new()
+        .and_then(|mut c| c.set_text(s.to_owned()))
+        .map_err(|e| format!("clipboard unavailable: {e}"))?;
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    const VK_V: u16 = 0x56;
+    send_keys(&[
+        key_input(VK_CONTROL, 0, 0),
+        key_input(VK_V, 0, 0),
+        key_input(VK_V, 0, KEYEVENTF_KEYUP),
+        key_input(VK_CONTROL, 0, KEYEVENTF_KEYUP),
+    ])?;
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    Ok(())
 }
