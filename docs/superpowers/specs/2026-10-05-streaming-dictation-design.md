@@ -153,21 +153,16 @@ All restart-required. `stream = true` switches the hotkey to tap-to-toggle.
 Go/no-go: proceed only if short-window WER is within the budget in Q3 and pass
 time at the chosen window is below the interval on the minimum GPU in Q2.
 
-## Open questions
+## Decisions on the open questions
 
-- **Q1.** Latency budget: is text within 1 s of speaking acceptable?
-- **Q2.** Minimum GPU for streaming mode. A 4 GB card may need more than 1 s per
-  3 s window, which would break a 1 s interval. Streaming could be limited to
-  GPUs with enough headroom, with batch mode as the fallback.
-- **Q3.** Acceptable Hebrew WER regression for streaming mode versus the
-  current full decode.
-- **Q4.** When the user interferes (types, clicks, switches window) mid-stream:
-  stop streaming and finalise, or keep going append-only?
-- **Q5.** Should streaming mode also be available hold-to-talk with a
-  modifier-free key (for example F9), as an option later?
+- **Q1 latency:** about 1.5 s is acceptable; a few more word errors are accepted.
+- **Q2 weak GPUs:** streaming degrades instead of disabling. Self-pacing (next pass starts when the previous finished), a widened interval, a notification, and a fall back to batch mode for the capture if a pass takes more than 3x the window.
+- **Q3 WER budget:** measured in Phase 0 and agreed with the user before building Phase 3.
+- **Q4 interference:** on typing, click or window change, lock everything typed so far and continue append-only.
+- **Q5 hold-to-talk streaming:** deferred.
 
 ## Plan impact
 
-Becomes a separate plan (v1.0.1): Phase 0 spike, then Phases 1–3 as sprints,
+Implemented by [../plans/2026-10-05-streaming-dictation.md](../plans/2026-10-05-streaming-dictation.md) (v1.0.1): Phase 0 spike, then Phases 1–3 as sprints,
 with the commit-state module developed test-first and property-tested before
 any wiring to the engine or typing.
