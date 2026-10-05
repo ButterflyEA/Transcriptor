@@ -28,8 +28,9 @@ pub fn join_segments(segments: &[TranscriptionSegment]) -> String {
 }
 
 /// First directory that contains `model.safetensors`: the configured one,
-/// then `<exe_dir>/models/ivrit-turbo`, then `<data_dir>/models/ivrit-turbo`.
+/// then `<exe_dir>/models/<model>`, then `<data_dir>/models/<model>`.
 pub fn resolve_model_dir(
+    model: &str,
     configured: Option<&Path>,
     exe_dir: &Path,
     data_dir: &Path,
@@ -38,12 +39,11 @@ pub fn resolve_model_dir(
         .map(Path::to_path_buf)
         .into_iter()
         .chain([
-            exe_dir.join("models").join("ivrit-turbo"),
-            data_dir.join("models").join("ivrit-turbo"),
+            exe_dir.join("models").join(model),
+            data_dir.join("models").join(model),
         ])
         .find(|d| d.join("model.safetensors").is_file())
 }
-
 impl Engine {
     pub fn load(size: ModelSize, model_dir: &Path) -> Result<Self> {
         Self::load_on(size, model_dir, default_device())

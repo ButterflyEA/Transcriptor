@@ -58,7 +58,7 @@ fn configured_dir_wins() {
     let configured = t.model("custom");
     let exe = t.0.join("exe");
     t.model("exe/models/ivrit-turbo");
-    let got = resolve_model_dir(Some(&configured), &exe, &t.0.join("data"));
+    let got = resolve_model_dir("ivrit-turbo", Some(&configured), &exe, &t.0.join("data"));
     assert_eq!(got, Some(configured));
 }
 
@@ -68,9 +68,15 @@ fn falls_back_to_exe_then_data_dir() {
     let exe = t.0.join("exe");
     let data = t.0.join("data");
     let data_model = t.model("data/models/ivrit-turbo");
-    assert_eq!(resolve_model_dir(None, &exe, &data), Some(data_model));
+    assert_eq!(
+        resolve_model_dir("ivrit-turbo", None, &exe, &data),
+        Some(data_model)
+    );
     let exe_model = t.model("exe/models/ivrit-turbo");
-    assert_eq!(resolve_model_dir(None, &exe, &data), Some(exe_model));
+    assert_eq!(
+        resolve_model_dir("ivrit-turbo", None, &exe, &data),
+        Some(exe_model)
+    );
 }
 
 #[test]
@@ -79,7 +85,12 @@ fn configured_dir_without_model_is_skipped() {
     let empty = t.0.join("empty");
     std::fs::create_dir_all(&empty).unwrap();
     let exe_model = t.model("exe/models/ivrit-turbo");
-    let got = resolve_model_dir(Some(&empty), &t.0.join("exe"), &t.0.join("data"));
+    let got = resolve_model_dir(
+        "ivrit-turbo",
+        Some(&empty),
+        &t.0.join("exe"),
+        &t.0.join("data"),
+    );
     assert_eq!(got, Some(exe_model));
 }
 
@@ -87,7 +98,7 @@ fn configured_dir_without_model_is_skipped() {
 fn missing_everywhere_is_none() {
     let t = Tmp::new("none");
     assert_eq!(
-        resolve_model_dir(None, &t.0.join("exe"), &t.0.join("data")),
+        resolve_model_dir("ivrit-turbo", None, &t.0.join("exe"), &t.0.join("data")),
         None
     );
 }

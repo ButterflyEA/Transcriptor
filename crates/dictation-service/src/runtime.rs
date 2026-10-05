@@ -69,7 +69,13 @@ fn model_search_paths(config: &Config) -> Result<PathBuf, String> {
         .and_then(|p| p.parent().map(PathBuf::from))
         .unwrap_or_default();
     let data_dir = dirs::data_dir().unwrap_or_default().join("dictation");
-    resolve_model_dir(config.model_dir.as_deref(), &exe_dir, &data_dir).ok_or_else(|| {
+    resolve_model_dir(
+        &config.model,
+        config.model_dir.as_deref(),
+        &exe_dir,
+        &data_dir,
+    )
+    .ok_or_else(|| {
         format!(
             "model not found; looked in {}, {} and {}",
             config
@@ -78,8 +84,8 @@ fn model_search_paths(config: &Config) -> Result<PathBuf, String> {
                 .map_or("(no model_dir configured)".into(), |p| p
                     .display()
                     .to_string()),
-            exe_dir.join("models").join("ivrit-turbo").display(),
-            data_dir.join("models").join("ivrit-turbo").display(),
+            exe_dir.join("models").join(&config.model).display(),
+            data_dir.join("models").join(&config.model).display(),
         )
     })
 }

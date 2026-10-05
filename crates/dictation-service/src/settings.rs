@@ -1,13 +1,14 @@
 //! Settings window (`dictation settings`), a separate process from the service.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use cpal::traits::{DeviceTrait, HostTrait};
 use eframe::egui;
 
 use crate::chord::Chord;
-use crate::config::{self, Config};
+use crate::config::{self, Config, parse_model};
 use crate::control::{self, Command};
+use crate::engine::resolve_model_dir;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FormState {
@@ -48,8 +49,59 @@ pub fn validate_form(f: &FormState) -> Result<Config, String> {
     let dev = f.input_device.trim();
     c.input_device = (!dev.is_empty()).then(|| dev.to_string());
     c.validate().map_err(|e| e.to_string())?;
+    check_model_present(&c)?;
     Chord::parse(&c.hotkey).map_err(|e| e.to_string())?;
     Ok(c)
+}
+
+fn app_dirs() -> (PathBuf, PathBuf) {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(PathBuf::from))
+        .unwrap_or_default();
+    (
+        exe_dir,
+        dirs::data_dir().unwrap_or_default().join("dictation"),
+    )
+}
+
+/// The service never downloads models, so a model without weights on disk
+/// would only fail at load time. The bundled default with no explicit folder
+/// is left to the service, which reports the searched paths itself.
+fn check_model_present(c: &Config) -> Result<(), String> {
+    if c.model == "ivrit-turbo" && c.model_dir.is_none() {
+        return Ok(());
+    }
+    let (exe, data) = app_dirs();
+    if resolve_model_dir(&c.model, c.model_dir.as_deref(), &exe, &data).is_some() {
+        return Ok(());
+    }
+    Err(format!(
+        "no {} weights (model.safetensors) found. Put the model in a folder and set \"Model folder\", or under {}",
+        c.model,
+        exe.join("models").join(&c.model).display()
+    ))
+}
+
+/// Models that can be selected: the bundled one, plus any `models/<name>` folder
+/// that has weights and a name the engine understands.
+pub fn available_models(exe_dir: &Path, data_dir: &Path) -> Vec<String> {
+    let mut out = vec!["ivrit-turbo".to_string()];
+    for root in [exe_dir.join("models"), data_dir.join("models")] {
+        let Ok(rd) = std::fs::read_dir(root) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if parse_model(&name).is_some()
+                && e.path().join("model.safetensors").is_file()
+                && !out.contains(&name)
+            {
+                out.push(name);
+            }
+        }
+    }
+    out
 }
 
 /// `ctrl+shift+space` style string for a key press, or `None` for a bare modifier.
@@ -84,20 +136,12 @@ fn input_devices() -> Vec<String> {
         .unwrap_or_default()
 }
 
-const MODELS: &[&str] = &[
-    "ivrit-turbo",
-    "large-v3-turbo",
-    "large-v3",
-    "medium",
-    "small",
-    "base",
-    "tiny",
-];
 const LANGS: &[&str] = &["auto", "he", "en", "ar", "ru", "fr", "de", "es"];
 
 struct App {
     form: FormState,
     devices: Vec<String>,
+    models: Vec<String>,
     capturing: bool,
     message: Option<(bool, String)>,
     wayland: bool,
@@ -157,8 +201,8 @@ impl eframe::App for App {
                 egui::ComboBox::from_id_salt("model")
                     .selected_text(self.form.model.clone())
                     .show_ui(ui, |ui| {
-                        for m in MODELS {
-                            ui.selectable_value(&mut self.form.model, m.to_string(), *m);
+                        for m in &self.models {
+                            ui.selectable_value(&mut self.form.model, m.clone(), m);
                         }
                     });
                 ui.end_row();
@@ -245,6 +289,14 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let app = App {
         form: FormState::from_config(&cfg),
         devices: input_devices(),
+        models: {
+            let (exe, data) = app_dirs();
+            let mut m = available_models(&exe, &data);
+            if !m.contains(&cfg.model) {
+                m.push(cfg.model.clone());
+            }
+            m
+        },
         capturing: false,
         message: None,
         wayland: cfg!(target_os = "linux") && crate::output::is_wayland(),
