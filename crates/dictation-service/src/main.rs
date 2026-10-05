@@ -5,10 +5,11 @@ use std::time::Instant;
 use clap::{Parser, Subcommand, ValueEnum};
 use dictation_service::audio::{CpalRecorder, Recorder};
 use dictation_service::config::{self, Config, parse_model};
+use dictation_service::control::{self, Command};
 use dictation_service::controller::Input;
 use dictation_service::engine::Engine;
 use dictation_service::output::{PasteOutcome, system_paster};
-use dictation_service::runtime::spawn;
+use dictation_service::runtime::{RuntimeMsg, spawn};
 use whisper_burn::audio::decode::decode_to_mono_f32;
 use whisper_burn::backends::{BackendChoice, cpu_device, default_device};
 
@@ -31,9 +32,18 @@ enum Device {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Run the dictation service in the foreground (default). Until global
-    /// hotkeys arrive, type `s` + Enter to start, `e` + Enter to stop, `q` to quit.
+    /// Run the dictation service in the foreground (default).
     Run,
+    /// Start recording (talk to the running service).
+    Start,
+    /// Stop recording and transcribe.
+    Stop,
+    /// Start recording if idle, otherwise stop.
+    Toggle,
+    /// Print the service status: loading, idle, recording, transcribing or error.
+    Status,
+    /// Re-read the config file (reloads the model only if it changed).
+    Reload,
     /// Developer tool: copy text to the clipboard and paste it after 3 seconds.
     #[command(hide = true)]
     PasteTest { text: String },
@@ -66,6 +76,11 @@ enum Cmd {
 fn main() -> ExitCode {
     match Args::parse().command {
         None | Some(Cmd::Run) => report(run()),
+        Some(Cmd::Start) => control_cmd(Command::Start),
+        Some(Cmd::Stop) => control_cmd(Command::Stop),
+        Some(Cmd::Toggle) => control_cmd(Command::Toggle),
+        Some(Cmd::Status) => control_cmd(Command::Status),
+        Some(Cmd::Reload) => control_cmd(Command::Reload),
         Some(Cmd::PasteTest { text }) => report(paste_test(&text)),
         Some(Cmd::RecordTest { secs, device }) => match record_test(secs, device) {
             Ok(()) => ExitCode::SUCCESS,
@@ -156,7 +171,27 @@ fn paste_test(text: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn control_cmd(cmd: Command) -> ExitCode {
+    match control::send(cmd) {
+        Ok(reply) => {
+            println!("{reply}");
+            if reply.starts_with("error") {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(e) => {
+            eprintln!("dictation is not running ({e}). Start it with `dictation run`.");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn run() -> Result<(), Box<dyn std::error::Error>> {
+    if control::send(Command::Status).is_ok() {
+        return Err("dictation is already running".into());
+    }
     let config: Config = Config::load_from(&config::default_path())?;
     config.validate()?;
     let rt = spawn(
@@ -164,14 +199,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(|s| eprintln!("status: {s:?}")),
         Box::new(|m| eprintln!("notice: {m}")),
     );
-    for line in std::io::stdin().lines() {
-        match line?.trim() {
-            "s" => rt.send(Input::Press),
-            "e" => rt.send(Input::Release),
-            "q" => break,
-            _ => {}
-        }
-    }
+    let tx = rt.tx.clone();
+    let status = rt.status_handle();
+    control::serve(move |cmd| match cmd {
+        Command::Start => send_input(&tx, Input::Press),
+        Command::Stop => send_input(&tx, Input::Release),
+        Command::Toggle => match tx.send(RuntimeMsg::Toggle) {
+            Ok(()) => "ok".into(),
+            Err(_) => "error: service is shutting down".into(),
+        },
+        Command::Status => status.lock().unwrap().as_str().to_string(),
+        Command::Reload => match Config::load_from(&config::default_path())
+            .and_then(|c| c.validate().map(|()| c))
+        {
+            Ok(c) => match tx.send(RuntimeMsg::Reload(Box::new(c))) {
+                Ok(()) => "ok".into(),
+                Err(_) => "error: service is shutting down".into(),
+            },
+            Err(e) => format!("error: {e}"),
+        },
+    })?;
     rt.shutdown();
     Ok(())
+}
+
+fn send_input(tx: &std::sync::mpsc::Sender<RuntimeMsg>, input: Input) -> String {
+    match tx.send(RuntimeMsg::Input(input)) {
+        Ok(()) => "ok".into(),
+        Err(_) => "error: service is shutting down".into(),
+    }
 }

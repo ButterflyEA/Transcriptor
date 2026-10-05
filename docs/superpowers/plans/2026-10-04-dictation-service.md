@@ -920,7 +920,7 @@ pub fn send(cmd: Command) -> std::io::Result<String>
 ```
 Protocol: one line request (`start\n`), one line response (`ok`, `recording`, `idle`, `error: ...`).
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 ```rust
 use dictation_service::control::Command;
 #[test] fn parses_known_commands_case_insensitively() {
@@ -934,18 +934,18 @@ use dictation_service::control::Command;
     }
 }
 ```
-- [ ] **Step 2:** Run, expect FAIL.
-- [ ] **Step 3: Implement** using `interprocess::local_socket` (`GenericNamespaced` on Windows, `GenericFilePath` on Linux). Remove a stale Linux socket file at server start; refuse to start a second instance (bind failure → "already running" error). Set socket permissions to the user only (`0o600` on Linux).
-- [ ] **Step 4:** Wire `Start`/`Stop` → `Input::Press`/`Release`; `Toggle` uses the controller's recording state (expose `Controller::is_recording()`; add a test for it); `Status` returns the current `Status` name (runtime keeps the last status in an `Arc<Mutex<Status>>`); `Reload` → `RuntimeMsg::Reload` which reloads config and, if the model changed, reloads the engine (set controller back to Loading via `Input::EngineReady` after load; add `Controller::set_loading()`).
-- [ ] **Step 5:** `main.rs`: `start|stop|toggle|status|reload` subcommands call `control::send`, print the reply, exit non-zero if the service isn't running.
-- [ ] **Step 6: Manual E2E:** run `dictation run` in one terminal; in another `dictation start`, speak, `dictation stop` → text pasted. Remove the stdin dev trigger from 3.3.
-- [ ] **Step 7:** Commit `feat(dictation): control socket and CLI`.
+- [x] **Step 2:** Run, expect FAIL.
+- [x] **Step 3: Implement** using `interprocess::local_socket` (`GenericNamespaced` on Windows, `GenericFilePath` on Linux). Remove a stale Linux socket file at server start; refuse to start a second instance (bind failure → "already running" error). Set socket permissions to the user only (`0o600` on Linux).
+- [x] **Step 4:** Wire `Start`/`Stop` → `Input::Press`/`Release`; `Toggle` uses the controller's recording state (expose `Controller::is_recording()`; add a test for it); `Status` returns the current `Status` name (runtime keeps the last status in an `Arc<Mutex<Status>>`); `Reload` → `RuntimeMsg::Reload` which reloads config and, if the model changed, reloads the engine (set controller back to Loading via `Input::EngineReady` after load; add `Controller::set_loading()`).
+- [x] **Step 5:** `main.rs`: `start|stop|toggle|status|reload` subcommands call `control::send`, print the reply, exit non-zero if the service isn't running.
+- [x] **Step 6: Manual E2E:** run `dictation run` in one terminal; in another `dictation start`, speak, `dictation stop` → text pasted. Remove the stdin dev trigger from 3.3.
+- [x] **Step 7:** Commit `feat(dictation): control socket and CLI`.
 
 ### Task 4.2: Hyprland/Omarchy docs
 
 **Files:** Create `docs/dictation.md` (initial section).
 
-- [ ] Document: install requirements (`wtype`), the Hyprland bindings
+- [x] Document: install requirements (`wtype`), the Hyprland bindings
 ```
 bind  = CTRL, SPACE, exec, dictation start
 bindr = CTRL, SPACE, exec, dictation stop

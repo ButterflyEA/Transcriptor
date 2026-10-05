@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -14,17 +15,36 @@ pub enum RuntimeMsg {
     Input(Input),
     /// Internal: the max-recording timer for capture number `n` fired.
     AutoStop(u64),
+    /// Press if idle, release if recording.
+    Toggle,
+    /// Apply a freshly loaded config: reloads the model only if it changed.
+    Reload(Box<Config>),
     Shutdown,
+}
+
+enum Job {
+    Transcribe(Recording),
+    Reload(Box<Config>),
 }
 
 pub struct Runtime {
     pub tx: Sender<RuntimeMsg>,
+    status: Arc<Mutex<Status>>,
     handle: JoinHandle<()>,
 }
 
 impl Runtime {
     pub fn send(&self, input: Input) {
         let _ = self.tx.send(RuntimeMsg::Input(input));
+    }
+
+    /// Shared handle to the latest status, for the control server.
+    pub fn status_handle(&self) -> Arc<Mutex<Status>> {
+        Arc::clone(&self.status)
+    }
+
+    pub fn status(&self) -> Status {
+        *self.status.lock().unwrap()
     }
 
     pub fn shutdown(self) {
@@ -57,35 +77,64 @@ fn model_search_paths(config: &Config) -> Result<PathBuf, String> {
     })
 }
 
-fn engine_thread(config: Config, jobs: mpsc::Receiver<Recording>, tx: Sender<RuntimeMsg>) {
+fn load_engine(config: &Config) -> Result<Engine, String> {
+    let size =
+        parse_model(&config.model).ok_or_else(|| format!("unknown model {:?}", config.model))?;
+    let dir = model_search_paths(config)?;
+    Engine::load(size, &dir).map_err(|e| e.to_string())
+}
+
+fn engine_thread(config: Config, jobs: mpsc::Receiver<Job>, tx: Sender<RuntimeMsg>) {
     let send = |i: Input| {
         let _ = tx.send(RuntimeMsg::Input(i));
     };
-    let loaded = parse_model(&config.model)
-        .ok_or_else(|| format!("unknown model {:?}", config.model))
-        .and_then(|size| {
-            let dir = model_search_paths(&config)?;
-            Engine::load(size, &dir).map_err(|e| e.to_string())
-        });
-    let engine = match loaded {
+    let mut config = config;
+    let mut engine = match load_engine(&config) {
         Ok(e) => {
             send(Input::EngineReady);
-            e
+            Some(e)
         }
         Err(e) => {
             send(Input::EngineFailed(e));
-            return;
+            None
         }
     };
-    let language = config.language_option();
-    while let Ok(rec) = jobs.recv() {
-        let result = engine
-            .transcribe_pcm(&rec.samples, rec.sample_rate, language.as_deref())
-            .map_err(|e| e.to_string());
-        send(Input::Transcribed(result));
+    while let Ok(job) = jobs.recv() {
+        match job {
+            Job::Transcribe(rec) => {
+                let result = match &engine {
+                    Some(e) => e
+                        .transcribe_pcm(
+                            &rec.samples,
+                            rec.sample_rate,
+                            config.language_option().as_deref(),
+                        )
+                        .map_err(|e| e.to_string()),
+                    None => Err("model is not loaded".to_string()),
+                };
+                send(Input::Transcribed(result));
+            }
+            Job::Reload(new) => {
+                let model_changed = engine.is_none()
+                    || new.model != config.model
+                    || new.model_dir != config.model_dir;
+                config = *new;
+                if model_changed {
+                    // Free the old weights before loading, so VRAM is never held twice.
+                    engine = None;
+                    engine = match load_engine(&config) {
+                        Ok(e) => Some(e),
+                        Err(e) => {
+                            send(Input::EngineFailed(e));
+                            continue;
+                        }
+                    };
+                }
+                send(Input::EngineReady);
+            }
+        }
     }
 }
-
 /// Starts the coordinator (owns the controller and recorder) and the engine
 /// thread (owns the model). Nothing here touches the network.
 pub fn spawn(config: Config, on_status: StatusFn, on_notify: NotifyFn) -> Runtime {
@@ -103,7 +152,7 @@ pub fn spawn_with(
     on_notify: NotifyFn,
 ) -> Runtime {
     let (tx, rx) = mpsc::channel::<RuntimeMsg>();
-    let (job_tx, job_rx) = mpsc::channel::<Recording>();
+    let (job_tx, job_rx) = mpsc::channel::<Job>();
 
     let engine_cfg = config.clone();
     let engine_tx = tx.clone();
@@ -112,6 +161,8 @@ pub fn spawn_with(
         .spawn(move || engine_thread(engine_cfg, job_rx, engine_tx))
         .expect("spawn engine thread");
 
+    let status = Arc::new(Mutex::new(Status::Loading));
+    let status_w = Arc::clone(&status);
     let timer_tx = tx.clone();
     let handle = thread::Builder::new()
         .name("coordinator".into())
@@ -126,6 +177,20 @@ pub fn spawn_with(
                     RuntimeMsg::Shutdown => break,
                     RuntimeMsg::AutoStop(n) if n == capture_no => pending.push_back(Input::Release),
                     RuntimeMsg::AutoStop(_) => {}
+                    RuntimeMsg::Toggle => pending.push_back(if controller.is_recording() {
+                        Input::Release
+                    } else {
+                        Input::Press
+                    }),
+                    RuntimeMsg::Reload(cfg) => {
+                        for action in controller.set_loading() {
+                            if let Action::SetStatus(s) = action {
+                                *status_w.lock().unwrap() = s;
+                                on_status(s);
+                            }
+                        }
+                        let _ = job_tx.send(Job::Reload(cfg));
+                    }
                     RuntimeMsg::Input(i) => pending.push_back(i),
                 }
                 while let Some(input) = pending.pop_front() {
@@ -149,7 +214,7 @@ pub fn spawn_with(
                                 Err(e) => Input::CaptureFailed(e),
                             }),
                             Action::Transcribe(rec) => {
-                                if job_tx.send(rec).is_err() {
+                                if job_tx.send(Job::Transcribe(rec)).is_err() {
                                     pending.push_back(Input::Transcribed(Err(
                                         "engine stopped".into()
                                     )));
@@ -162,7 +227,10 @@ pub fn spawn_with(
                                 }
                                 Err(e) => on_notify(format!("paste failed: {e}")),
                             },
-                            Action::SetStatus(s) => on_status(s),
+                            Action::SetStatus(s) => {
+                                *status_w.lock().unwrap() = s;
+                                on_status(s);
+                            }
                             Action::Notify(m) => on_notify(m),
                         }
                     }
@@ -171,5 +239,5 @@ pub fn spawn_with(
         })
         .expect("spawn coordinator thread");
 
-    Runtime { tx, handle }
+    Runtime { tx, status, handle }
 }

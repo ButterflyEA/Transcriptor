@@ -32,6 +32,18 @@ pub enum Status {
     Error,
 }
 
+impl Status {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Status::Loading => "loading",
+            Status::Idle => "idle",
+            Status::Recording => "recording",
+            Status::Transcribing => "transcribing",
+            Status::Error => "error",
+        }
+    }
+}
+
 pub struct Controller {
     ready: bool,
     recording: bool,
@@ -49,6 +61,16 @@ impl Controller {
             queue: VecDeque::new(),
             queue_cap,
         }
+    }
+
+    pub fn is_recording(&self) -> bool {
+        self.recording
+    }
+
+    /// Called when the engine is being (re)loaded; presses are refused until `EngineReady`.
+    pub fn set_loading(&mut self) -> Vec<Action> {
+        self.ready = false;
+        vec![Action::SetStatus(Status::Loading)]
     }
 
     fn status(&self) -> Status {

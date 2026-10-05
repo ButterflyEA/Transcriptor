@@ -125,3 +125,36 @@ fn status_is_recording_while_busy() {
         Action::SetStatus(Status::Recording)
     )));
 }
+
+#[test]
+fn is_recording_tracks_press_and_capture() {
+    let mut c = ready();
+    assert!(!c.is_recording());
+    c.handle(Input::Press);
+    assert!(c.is_recording());
+    c.handle(Input::Release);
+    c.handle(Input::Captured(rec(1000)));
+    assert!(!c.is_recording());
+}
+
+#[test]
+fn set_loading_blocks_presses_until_ready_again() {
+    let mut c = ready();
+    let a = c.set_loading();
+    assert!(has(&a, |x| matches!(x, Action::SetStatus(Status::Loading))));
+    assert!(has(&c.handle(Input::Press), |x| matches!(
+        x,
+        Action::Notify(_)
+    )));
+    c.handle(Input::EngineReady);
+    assert!(has(&c.handle(Input::Press), |x| matches!(
+        x,
+        Action::StartCapture
+    )));
+}
+
+#[test]
+fn status_names() {
+    assert_eq!(Status::Idle.as_str(), "idle");
+    assert_eq!(Status::Recording.as_str(), "recording");
+}

@@ -7,7 +7,7 @@ use dictation_service::audio::{Recorder, Recording};
 use dictation_service::config::Config;
 use dictation_service::controller::{Input, Status};
 use dictation_service::output::{PasteOutcome, Paster};
-use dictation_service::runtime::spawn_with;
+use dictation_service::runtime::{RuntimeMsg, spawn_with};
 use whisper_burn::audio::decode::decode_to_mono_f32;
 
 struct FakeRecorder(Recording);
@@ -103,4 +103,52 @@ fn end_to_end_hebrew_dictation_pastes_text() {
         "{}",
         got[0]
     );
+}
+
+#[test]
+#[ignore]
+fn toggle_and_reload_work_with_the_real_model() {
+    let model_dir = PathBuf::from(std::env::var("DICTATION_MODEL_DIR").unwrap());
+    let wav = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_16000_mono.wav");
+    let (samples, sample_rate) = decode_to_mono_f32(&wav).unwrap();
+    let cfg = Config {
+        model_dir: Some(model_dir),
+        language: "he".into(),
+        ..Config::default()
+    };
+    let (stx, srx) = mpsc::channel();
+    let pasted = Arc::new(Mutex::new(Vec::new()));
+    let rt = spawn_with(
+        cfg.clone(),
+        Box::new(FakeRecorder(Recording {
+            samples,
+            sample_rate,
+        })),
+        Box::new(FakePaster(pasted.clone())),
+        Box::new(move |s| {
+            let _ = stx.send(s);
+        }),
+        Box::new(|m| eprintln!("notify: {m}")),
+    );
+    let wait_for = |want: Status| loop {
+        let s = srx.recv_timeout(Duration::from_secs(120)).expect("status");
+        if s == want {
+            break;
+        }
+    };
+    wait_for(Status::Idle);
+
+    // Reload with an unchanged model: goes Loading then straight back to Idle.
+    rt.tx.send(RuntimeMsg::Reload(Box::new(cfg))).unwrap();
+    wait_for(Status::Loading);
+    wait_for(Status::Idle);
+
+    rt.tx.send(RuntimeMsg::Toggle).unwrap();
+    wait_for(Status::Recording);
+    assert_eq!(rt.status(), Status::Recording);
+    rt.tx.send(RuntimeMsg::Toggle).unwrap();
+    wait_for(Status::Transcribing);
+    wait_for(Status::Idle);
+    rt.shutdown();
+    assert_eq!(pasted.lock().unwrap().len(), 1);
 }
