@@ -22,6 +22,20 @@ A press during transcription is queued.
   directly; this needs your user in the `input` group and lets the process see
   all keystrokes, so it is off by default.
 
+## Tray and settings
+
+`dictation run` shows a tray icon whose colour is the state (grey loading, green
+idle, red recording, orange transcribing, purple error). The menu has the
+current status, **Paused** (refuses new recordings), **Settings…** and **Quit**.
+Problems such as "copied to clipboard, not pasted" appear as desktop
+notifications. If no tray is available the service runs headless and
+`dictation start/stop` still work. On Linux the tray needs GTK 3 and
+libappindicator (for example `libayatana-appindicator3`).
+
+`dictation settings` opens the settings window: hotkey, model, model folder,
+language and input device. Save writes `config.toml` and tells a running
+service to reload; a changed hotkey needs a service restart.
+
 ## Controlling a running service
 
 `dictation run` starts the service (foreground). It listens on a local socket

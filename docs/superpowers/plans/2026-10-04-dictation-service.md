@@ -1056,11 +1056,11 @@ pub fn select(backend_pref: Option<&str>) -> Option<Box<dyn HotkeyBackend>>
 
 **Consumes:** `Runtime`, `RuntimeMsg`, `Status` (3.3 / 3.1).
 
-- [ ] **Step 1:** `main.rs` `run`: build the runtime, then run a `tao` event loop on the main thread owning the `TrayIcon`. `on_status` posts a user event to swap the icon and tooltip; `on_notify` calls `notify-rust` (fall back to `log::warn!` when no notification daemon).
-- [ ] **Step 2:** Menu: `Status: <state>` (disabled), `Pause/Resume` (ignores hotkey events while paused: `Runtime` gets `RuntimeMsg::SetPaused(bool)` and the coordinator drops `Press` inputs), `Settings…` (spawns `std::env::current_exe() settings`), `Quit` (sends `Shutdown`, exits the loop).
-- [ ] **Step 3:** On Linux the tray needs GTK + libappindicator; document in `docs/dictation.md`. If tray creation fails, log a warning and continue headless (the service must still work under a compositor without a tray).
+- [x] **Step 1:** `main.rs` `run`: build the runtime, then run a `tao` event loop on the main thread owning the `TrayIcon`. `on_status` posts a user event to swap the icon and tooltip; `on_notify` calls `notify-rust` (fall back to `log::warn!` when no notification daemon).
+- [x] **Step 2:** Menu: `Status: <state>` (disabled), `Pause/Resume` (ignores hotkey events while paused: `Runtime` gets `RuntimeMsg::SetPaused(bool)` and the coordinator drops `Press` inputs), `Settings…` (spawns `std::env::current_exe() settings`), `Quit` (sends `Shutdown`, exits the loop).
+- [x] **Step 3:** On Linux the tray needs GTK + libappindicator; document in `docs/dictation.md`. If tray creation fails, log a warning and continue headless (the service must still work under a compositor without a tray).
 - [ ] **Step 4: Manual check:** the icon changes through the full cycle; Quit exits cleanly; Pause blocks recording.
-- [ ] **Step 5:** Commit `feat(dictation): tray icon, status and notifications`.
+- [x] **Step 5:** Commit `feat(dictation): tray icon, status and notifications`.
 
 ### Task 6.2: Settings window
 
@@ -1068,11 +1068,11 @@ pub fn select(backend_pref: Option<&str>) -> Option<Box<dyn HotkeyBackend>>
 
 **Produces:** subcommand `dictation settings` (separate process).
 
-- [ ] **Step 1:** UI fields: hotkey (button "Record new hotkey" capturing the next chord via egui key events, producing a `Chord`-parsable string such as `ctrl+space`; shown only when not on Wayland, otherwise show the compositor binding help text), model (ComboBox listing the bundled `ivrit-turbo` plus any other model folders found under `models/`, and a "Model folder" path field → `model_dir`), language (ComboBox with `auto` plus a short list of common ISO codes and a free text field validated by `Config::validate`), input device (ComboBox from `cpal` device names + "Default"), Save / Cancel.
-- [ ] **Step 2:** Save: `Config::validate()` → on error show it inline and don't write; on success `save_to(default_path())`, then call `control::send(Command::Reload)` (ignore "not running").
-- [ ] **Step 3:** Add a pure helper `fn validate_form(&FormState) -> Result<Config, String>` with unit tests for the language/model rules (reusing `Config::validate`).
+- [x] **Step 1:** UI fields: hotkey (button "Record new hotkey" capturing the next chord via egui key events, producing a `Chord`-parsable string such as `ctrl+space`; shown only when not on Wayland, otherwise show the compositor binding help text), model (ComboBox listing the bundled `ivrit-turbo` plus any other model folders found under `models/`, and a "Model folder" path field → `model_dir`), language (ComboBox with `auto` plus a short list of common ISO codes and a free text field validated by `Config::validate`), input device (ComboBox from `cpal` device names + "Default"), Save / Cancel.
+- [x] **Step 2:** Save: `Config::validate()` → on error show it inline and don't write; on success `save_to(default_path())`, then call `control::send(Command::Reload)` (ignore "not running").
+- [x] **Step 3:** Add a pure helper `fn validate_form(&FormState) -> Result<Config, String>` with unit tests for the language/model rules (reusing `Config::validate`).
 - [ ] **Step 4: Manual check:** change the model folder to a second model (or break the path), Save; tray shows Loading then Idle (or Error with the expected-path message) and the next dictation uses the new model.
-- [ ] **Step 5:** Commit `feat(dictation): settings window`.
+- [x] **Step 5:** Commit `feat(dictation): settings window`.
 
 ---
 

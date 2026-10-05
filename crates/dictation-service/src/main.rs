@@ -12,6 +12,7 @@ use dictation_service::engine::Engine;
 use dictation_service::hotkey;
 use dictation_service::output::{PasteOutcome, system_paster};
 use dictation_service::runtime::{RuntimeMsg, spawn};
+use dictation_service::tray::{self, UiEvent};
 use whisper_burn::audio::decode::decode_to_mono_f32;
 use whisper_burn::backends::{BackendChoice, cpu_device, default_device};
 
@@ -46,6 +47,8 @@ enum Cmd {
     Status,
     /// Re-read the config file (reloads the model only if it changed).
     Reload,
+    /// Open the settings window.
+    Settings,
     /// Developer tool: copy text to the clipboard and paste it after 3 seconds.
     #[command(hide = true)]
     PasteTest { text: String },
@@ -83,6 +86,7 @@ fn main() -> ExitCode {
         Some(Cmd::Toggle) => control_cmd(Command::Toggle),
         Some(Cmd::Status) => control_cmd(Command::Status),
         Some(Cmd::Reload) => control_cmd(Command::Reload),
+        Some(Cmd::Settings) => report(dictation_service::settings::run()),
         Some(Cmd::PasteTest { text }) => report(paste_test(&text)),
         Some(Cmd::RecordTest { secs, device }) => match record_test(secs, device) {
             Ok(()) => ExitCode::SUCCESS,
@@ -198,36 +202,50 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     config.validate()?;
     let hotkey_label = config.hotkey.clone();
     let chord = Chord::parse(&hotkey_label)?;
+    let event_loop = tray::event_loop();
+    let (status_proxy, notice_proxy) = (event_loop.create_proxy(), event_loop.create_proxy());
     let rt = spawn(
         config,
-        Box::new(|s| eprintln!("status: {s:?}")),
-        Box::new(|m| eprintln!("notice: {m}")),
+        Box::new(move |s| {
+            eprintln!("status: {s:?}");
+            let _ = status_proxy.send_event(UiEvent::Status(s));
+        }),
+        Box::new(move |m| {
+            eprintln!("notice: {m}");
+            let _ = notice_proxy.send_event(UiEvent::Notice(m));
+        }),
     );
     start_hotkey(chord, &hotkey_label, rt.tx.clone());
     let tx = rt.tx.clone();
     let status = rt.status_handle();
-    control::serve(move |cmd| match cmd {
-        Command::Start => send_input(&tx, Input::Press),
-        Command::Stop => send_input(&tx, Input::Release),
-        Command::Toggle => match tx.send(RuntimeMsg::Toggle) {
-            Ok(()) => "ok".into(),
-            Err(_) => "error: service is shutting down".into(),
-        },
-        Command::Status => status.lock().unwrap().as_str().to_string(),
-        Command::Reload => match Config::load_from(&config::default_path())
-            .and_then(|c| c.validate().map(|()| c))
-        {
-            Ok(c) => match tx.send(RuntimeMsg::Reload(Box::new(c))) {
-                Ok(()) => "ok".into(),
-                Err(_) => "error: service is shutting down".into(),
-            },
-            Err(e) => format!("error: {e}"),
-        },
-    })?;
-    rt.shutdown();
-    Ok(())
+    // The control server runs beside the tray loop; Quit ends the process.
+    std::thread::Builder::new()
+        .name("control".into())
+        .spawn(move || {
+            let result = control::serve(move |cmd| match cmd {
+                Command::Start => send_input(&tx, Input::Press),
+                Command::Stop => send_input(&tx, Input::Release),
+                Command::Toggle => match tx.send(RuntimeMsg::Toggle) {
+                    Ok(()) => "ok".into(),
+                    Err(_) => "error: service is shutting down".into(),
+                },
+                Command::Status => status.lock().unwrap().as_str().to_string(),
+                Command::Reload => match Config::load_from(&config::default_path())
+                    .and_then(|c| c.validate().map(|()| c))
+                {
+                    Ok(c) => match tx.send(RuntimeMsg::Reload(Box::new(c))) {
+                        Ok(()) => "ok".into(),
+                        Err(_) => "error: service is shutting down".into(),
+                    },
+                    Err(e) => format!("error: {e}"),
+                },
+            });
+            if let Err(e) = result {
+                eprintln!("control server stopped: {e}");
+            }
+        })?;
+    tray::run(event_loop, rt)
 }
-
 fn send_input(tx: &std::sync::mpsc::Sender<RuntimeMsg>, input: Input) -> String {
     match tx.send(RuntimeMsg::Input(input)) {
         Ok(()) => "ok".into(),

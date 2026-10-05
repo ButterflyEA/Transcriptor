@@ -19,7 +19,14 @@ pub enum RuntimeMsg {
     Toggle,
     /// Apply a freshly loaded config: reloads the model only if it changed.
     Reload(Box<Config>),
+    /// While paused, new recordings are refused (a recording in progress can still stop).
+    SetPaused(bool),
     Shutdown,
+}
+
+/// True when a message would start a recording and must be ignored while paused.
+pub fn blocked_by_pause(paused: bool, msg: &RuntimeMsg) -> bool {
+    paused && matches!(msg, RuntimeMsg::Input(Input::Press) | RuntimeMsg::Toggle)
 }
 
 enum Job {
@@ -170,10 +177,15 @@ pub fn spawn_with(
             let mut controller = Controller::new(config.queue_cap);
             let mut capture_no = 0u64;
             let mut pending: VecDeque<Input> = VecDeque::new();
+            let mut paused = false;
             on_status(Status::Loading);
 
             while let Ok(msg) = rx.recv() {
+                if blocked_by_pause(paused, &msg) && !controller.is_recording() {
+                    continue;
+                }
                 match msg {
+                    RuntimeMsg::SetPaused(p) => paused = p,
                     RuntimeMsg::Shutdown => break,
                     RuntimeMsg::AutoStop(n) if n == capture_no => pending.push_back(Input::Release),
                     RuntimeMsg::AutoStop(_) => {}

@@ -27,6 +27,10 @@ arboard = "3"
 enigo = "0.3"
 interprocess = "2"
 rdev = "0.5"
+tray-icon = "0.19"
+tao = "0.30"
+notify-rust = "4"
+eframe = "0.29"
 thiserror.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
