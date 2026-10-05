@@ -185,3 +185,16 @@ Findings:
 - Not yet measured: extra recorded clips, tail stability, and mel drift on live audio.
 
 Recommended defaults: 3 s padded windows, interval about 1 s, which gives about 1.5 s latency.
+
+### Recorded-clip results (padded windows, CER vs the full 30 s decode)
+
+| Clip | 1 s | 2 s | 3 s | 5 s | ms/pass (3 s) |
+|---|---|---|---|---|---|
+| normal (22 s) | 0.280 | 0.125 | 0.060 | 0.036 | 916 |
+| pauses (22 s) | 0.564 | 0.359 | 0.154 | 0.128 | 854 |
+| silence (22 s) | empty | empty | empty | empty | 699 |
+| test clip (22 s) | 0.236 | 0.133 | 0.091 | 0.055 | 907 |
+
+- Silence produced empty text at every window size, so there were no hallucinations on pure silence. The 'תודה רבה' hallucination only appeared on trailing audio, so the VAD gate is still worth keeping.
+- Pauses are the weak case. At 3 s the error rate is 0.15, because windows that split a sentence near a pause drift.
+- Go: 3 s padded windows are the default (error rate 0.06-0.15, about 0.9 s per pass). 2 s is an option for lower latency, at 0.13-0.36.
