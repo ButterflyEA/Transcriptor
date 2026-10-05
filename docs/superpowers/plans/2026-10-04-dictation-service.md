@@ -1084,18 +1084,18 @@ pub fn select(backend_pref: Option<&str>) -> Option<Box<dyn HotkeyBackend>>
 
 **Files:** Modify `src/runtime.rs`, `src/audio.rs`, `src/output.rs`.
 
-- [ ] **Step 1:** Mic lost mid-recording: `stop()` returns `Err` → `CaptureFailed` → notification; next press re-opens the device (recorder rebuilds its stream on every `start`).
-- [ ] **Step 2:** Model missing or unloadable at startup: `EngineFailed` → Error status + notification naming the searched paths (no download is attempted); add a tray item "Retry model load" that sends `Reload`.
-- [ ] **Step 3:** Single-instance: starting `dictation run` twice prints "already running" and exits 1 (from the control bind failure).
-- [ ] **Step 4:** Add a controller test that `EngineFailed` followed by `Press` does not start capture (status stays Error) and fix if needed.
-- [ ] **Step 5:** Commit `fix(dictation): error handling pass`.
+- [x] **Step 1:** Mic lost mid-recording: `stop()` returns `Err` → `CaptureFailed` → notification; next press re-opens the device (recorder rebuilds its stream on every `start`).
+- [x] **Step 2:** Model missing or unloadable at startup: `EngineFailed` → Error status + notification naming the searched paths (no download is attempted); add a tray item "Retry model load" that sends `Reload`.
+- [x] **Step 3:** Single-instance: starting `dictation run` twice prints "already running" and exits 1 (from the control bind failure).
+- [x] **Step 4:** Add a controller test that `EngineFailed` followed by `Press` does not start capture (status stays Error) and fix if needed.
+- [x] **Step 5:** Commit `fix(dictation): error handling pass`.
 
 ### Task 7.2: Docs and manual QA
 
 **Files:** Create/finish `docs/dictation.md`; modify `README.md` (Layout + Building).
 
-- [ ] **Step 1:** Finish `docs/dictation.md`: install/build, config file reference (every field, default, valid values), hotkey setup per platform (Windows, X11, Wayland/Hyprland incl. Omarchy), `wtype`/`ydotool`, evdev option and privacy note, known limitations (elevated windows, terminals need Ctrl+Shift+V, Wayland tray requirements, Ctrl+Space collisions with IMEs), troubleshooting.
-- [ ] **Step 2:** README: add the crate under **Layout** and the build command `cargo build --release -p dictation-service`.
+- [x] **Step 1:** Finish `docs/dictation.md`: install/build, config file reference (every field, default, valid values), hotkey setup per platform (Windows, X11, Wayland/Hyprland incl. Omarchy), `wtype`/`ydotool`, evdev option and privacy note, known limitations (elevated windows, terminals need Ctrl+Shift+V, Wayland tray requirements, Ctrl+Space collisions with IMEs), troubleshooting.
+- [x] **Step 2:** README: add the crate under **Layout** and the build command `cargo build --release -p dictation-service`.
 - [ ] **Step 3: Manual QA checklist** (record results in the PR):
   - [ ] Hold/release records and pastes in Notepad / browser / VS Code (Windows)
   - [ ] Same on X11 and on Hyprland via binds
@@ -1106,8 +1106,8 @@ pub fn select(backend_pref: Option<&str>) -> Option<Box<dyn HotkeyBackend>>
   - [ ] Changing language to `he` in settings and dictating Hebrew
   - [ ] Peak VRAM and idle RAM with the bundled model noted in docs (must stay within 4 GB VRAM)
   - [ ] Airgap proof: with networking disabled (Windows: disable adapters; Linux: `unshare -n` or unplug), cold start, dictate Hebrew, everything works; and a network capture/firewall log shows zero outbound connections from `dictation`
-- [ ] **Step 4:** Run `cargo test --workspace` and `cargo clippy -p dictation-service -- -D warnings`; fix findings.
-- [ ] **Step 5:** Commit `docs(dictation): usage guide and README`.
+- [x] **Step 4:** Run `cargo test --workspace` and `cargo clippy -p dictation-service -- -D warnings`; fix findings.
+- [x] **Step 5:** Commit `docs(dictation): usage guide and README`.
 
 ---
 
@@ -1116,11 +1116,11 @@ pub fn select(backend_pref: Option<&str>) -> Option<Box<dyn HotkeyBackend>>
 **Files:** Create `packaging/` (Windows installer script, Linux packaging notes), `docs/dictation.md` (install section); modify `README.md`.
 
 - [ ] **Step 1:** Windows installer (NSIS, same tool family as the existing app) installs `dictation.exe` plus `models\ivrit-turbo\{config.json,model.safetensors}` next to it (or under `%ProgramData%\dictation\models` for per-machine installs, which `resolve_model_dir` also checks via the data dir). Installer size is ~3.2 GB (f32) or smaller if the Task 1.3 decision ships f16 weights; note the NSIS 2 GB limit — use a separate model payload (second archive, or an MSI/zip bundle) if the file exceeds it.
-- [ ] **Step 2:** Linux: a tarball (and optional deb/rpm) with `bin/dictation` and `share/dictation/models/ivrit-turbo/`; the service also checks `/usr/share/dictation/models/ivrit-turbo` — add that path to `resolve_model_dir` with a test.
-- [ ] **Step 3:** Ship a `SHA256SUMS` for the model files; add `dictation verify-model` (hidden) that recomputes and compares the checksum so IT can validate a transfer into the airgapped network. Unit-test the checksum helper on a small temp file.
-- [ ] **Step 4:** Document how to carry the installer into an airgapped network and the model license (Apache-2.0, ivrit-ai attribution, from the model card) in `docs/dictation.md` and a `THIRD_PARTY_NOTICES` entry.
+- [x] **Step 2:** Linux: a tarball (and optional deb/rpm) with `bin/dictation` and `share/dictation/models/ivrit-turbo/`; the service also checks `/usr/share/dictation/models/ivrit-turbo` — add that path to `resolve_model_dir` with a test.
+- [x] **Step 3:** Ship a `SHA256SUMS` for the model files; add `dictation verify-model` (hidden) that recomputes and compares the checksum so IT can validate a transfer into the airgapped network. Unit-test the checksum helper on a small temp file.
+- [x] **Step 4:** Document how to carry the installer into an airgapped network and the model license (Apache-2.0, ivrit-ai attribution, from the model card) in `docs/dictation.md` and a `THIRD_PARTY_NOTICES` entry.
 - [ ] **Step 5:** Test on a clean VM with networking disabled: install, start, dictate Hebrew.
-- [ ] **Step 6:** Commit `feat(dictation): offline installer with bundled model`.
+- [x] **Step 6:** Commit `feat(dictation): offline installer with bundled model`.
 
 ---
 
