@@ -7,3 +7,5 @@ crates/transcriptor/src-tauri/target/
 # Sidecar transcripts the CLI writes next to its input; the golden test run
 # regenerates test_16000_mono.json on every invocation.
 /test_16000_mono.json
+
+packaging/dist/
