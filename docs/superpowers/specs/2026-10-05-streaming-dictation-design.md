@@ -166,3 +166,22 @@ time at the chosen window is below the interval on the minimum GPU in Q2.
 Implemented by [../plans/2026-10-05-streaming-dictation.md](../plans/2026-10-05-streaming-dictation.md) (v1.0.1): Phase 0 spike, then Phases 1–3 as sprints,
 with the commit-state module developed test-first and property-tested before
 any wiring to the engine or typing.
+
+## Phase 0 results (measured on the RTX 5060 Ti, f16, 22 s Hebrew clip)
+
+| Window | Unpadded CER | Padded-to-30 s CER | Padded ms/pass |
+|---|---|---|---|
+| 1 s | 13.5 (loops) | 0.236 | 816 |
+| 2 s | 7.6 (loops) | 0.133 | 960 |
+| 3 s | 4.6 (repeats) | 0.091 | 972 |
+| 5 s | 1.25 (repeats) | 0.055 | 1135 |
+| 10 s | 0.061 | n/a | n/a |
+
+Findings:
+- The model needs 30 s zero-padded input. Short unpadded windows hallucinate, so streaming uses padded windows (`pad_windows = true`).
+- The naive CPU mel was the bottleneck (2.1 s). Parallel frames plus zero-frame skip took it to 0.17 s, which also speeds up batch dictation.
+- Per-pass time is now about 1 s. The encoder costs about 0.2 s whatever the window length, and decode costs about 55 ms per token.
+- Silence-only windows can hallucinate "תודה רבה", so the VAD gate in Sprint B is required.
+- Not yet measured: extra recorded clips, tail stability, and mel drift on live audio.
+
+Recommended defaults: 3 s padded windows, interval about 1 s, which gives about 1.5 s latency.
