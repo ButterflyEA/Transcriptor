@@ -10,4 +10,7 @@ pub mod metrics;
 pub mod output;
 pub mod runtime;
 pub mod settings;
+pub mod stitch;
+pub mod transcript;
 pub mod tray;
+pub mod vad;

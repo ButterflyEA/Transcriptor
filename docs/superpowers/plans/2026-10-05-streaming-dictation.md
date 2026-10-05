@@ -108,7 +108,7 @@ fn split_windows_covers_audio_without_padding() {
 - Produces: `pub fn words(text: &str) -> Vec<String>` (whitespace split of the original text, order preserved).
 - Produces: `pub fn agreed_prefix_len(a: &[String], b: &[String]) -> usize` (count of leading words equal after normalisation).
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
 
 ```rust
 use dictation_service::transcript::*;
@@ -127,10 +127,10 @@ fn agreed_prefix_ignores_punctuation_flips() {
 }
 ```
 
-- [ ] **Step 2: Run, see them fail.** `cargo test -p dictation-service --test transcript`
-- [ ] **Step 3: Implement** with `char::is_alphanumeric` filtering and the Unicode range above.
-- [ ] **Step 4: Run, see them pass.**
-- [ ] **Step 5: Commit** `feat(dictation): word normalisation and agreement`.
+- [x] **Step 2: Run, see them fail.** `cargo test -p dictation-service --test transcript`
+- [x] **Step 3: Implement** with `char::is_alphanumeric` filtering and the Unicode range above.
+- [x] **Step 4: Run, see them pass.**
+- [x] **Step 5: Commit** `feat(dictation): word normalisation and agreement`.
 
 ### Task B.2: Locked text and tentative tail state machine
 
@@ -161,7 +161,7 @@ impl Transcript {
 
 Rules to implement: words in the agreed prefix older than `lock_words` from the end become locked; the tail is everything after locked words; when the new tail differs from `typed_tail`, emit `Replace` with `backspaces = typed_tail.chars().count()`; when it only extends it, emit `Append`; in append-only mode never emit `Replace` (emit only the non-contradicting suffix and keep what is typed).
 
-- [ ] **Step 1: Failing example tests.**
+- [x] **Step 1: Failing example tests.**
 
 ```rust
 #[test]
@@ -189,10 +189,10 @@ fn append_only_never_backspaces() {
 }
 ```
 
-- [ ] **Step 2: Failing property test (the key invariant).** For random sequences of passes (a prefix-stable base text with random mutations only in the last `k < lock_words` words), assert after each pass: (1) `typed_total` (what the target would contain after applying every edit to a simulated buffer) always starts with the locked words, (2) backspaces never exceed the simulated tail length, (3) after `finish(final)` the simulated buffer equals `final` when no word was locked wrongly. Run and see it fail.
-- [ ] **Step 3: Implement** until examples and properties pass. Include a log line (via `log::warn!`) when a pass contradicts locked text.
-- [ ] **Step 4: Run the whole file** and `cargo clippy -p dictation-service --all-targets -- -D warnings`.
-- [ ] **Step 5: Commit** `feat(dictation): locked text and tentative tail state machine`.
+- [x] **Step 2: Failing property test (the key invariant).** For random sequences of passes (a prefix-stable base text with random mutations only in the last `k < lock_words` words), assert after each pass: (1) `typed_total` (what the target would contain after applying every edit to a simulated buffer) always starts with the locked words, (2) backspaces never exceed the simulated tail length, (3) after `finish(final)` the simulated buffer equals `final` when no word was locked wrongly. Run and see it fail.
+- [x] **Step 3: Implement** until examples and properties pass. Include a log line (via `log::warn!`) when a pass contradicts locked text.
+- [x] **Step 4: Run the whole file** and `cargo clippy -p dictation-service --all-targets -- -D warnings`.
+- [x] **Step 5: Commit** `feat(dictation): locked text and tentative tail state machine`.
 
 ### Task B.3: Overlap stitching
 
@@ -203,7 +203,7 @@ fn append_only_never_backspaces() {
 **Interfaces:**
 - Produces: `pub fn stitch(prev: &[String], next: &[String], max_overlap_words: usize) -> Vec<String>`: appends `next` to `prev`, dropping the longest suffix of `prev` that equals a prefix of `next` after `normalize_word`.
 
-- [ ] **Step 1: Failing test.**
+- [x] **Step 1: Failing test.**
 
 ```rust
 #[test]
@@ -221,8 +221,8 @@ fn no_overlap_just_concatenates() {
 }
 ```
 
-- [ ] **Step 2: Fail, implement, pass.** Prefer the longest match; never drop more than `max_overlap_words`.
-- [ ] **Step 3: Commit** `feat(dictation): overlap stitching`.
+- [x] **Step 2: Fail, implement, pass.** Prefer the longest match; never drop more than `max_overlap_words`.
+- [x] **Step 3: Commit** `feat(dictation): overlap stitching`.
 
 ### Task B.4: Silence gate
 
@@ -233,8 +233,8 @@ fn no_overlap_just_concatenates() {
 **Interfaces:**
 - Produces: `pub fn is_speech(pcm: &[f32], rate: u32, threshold_rms: f32) -> bool` (true when any 30 ms frame's RMS exceeds the threshold). A `pub const DEFAULT_RMS: f32` chosen from the Phase 0 noise sample.
 
-- [ ] **Step 1:** Failing tests: zeros and low noise return `false`; a 440 Hz tone at 0.1 amplitude returns `true`; a 10 ms click only does not.
-- [ ] **Step 2:** Implement, run, commit `feat(dictation): energy gate for silent windows`.
+- [x] **Step 1:** Failing tests: zeros and low noise return `false`; a 440 Hz tone at 0.1 amplitude returns `true`; a 10 ms click only does not.
+- [x] **Step 2:** Implement, run, commit `feat(dictation): energy gate for silent windows`.
 
 **Review gate:** stop for the user.
 

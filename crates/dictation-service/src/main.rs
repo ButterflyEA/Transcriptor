@@ -66,6 +66,9 @@ enum Cmd {
         secs: u64,
         #[arg(long)]
         device: Option<String>,
+        /// Also save the capture as a 16-bit mono WAV file.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
     /// Developer tool: transcribe an audio file from a local model folder.
     #[command(hide = true)]
@@ -115,7 +118,7 @@ fn main() -> ExitCode {
         Some(Cmd::VerifyModel { dir }) => verify_model(dir),
         Some(Cmd::Settings) => report(dictation_service::settings::run()),
         Some(Cmd::PasteTest { text }) => report(paste_test(&text)),
-        Some(Cmd::RecordTest { secs, device }) => match record_test(secs, device) {
+        Some(Cmd::RecordTest { secs, device, out }) => match record_test(secs, device, out) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -239,7 +242,7 @@ fn transcribe_file(
     Ok(())
 }
 
-fn record_test(secs: u64, device: Option<String>) -> Result<(), String> {
+fn record_test(secs: u64, device: Option<String>, out: Option<PathBuf>) -> Result<(), String> {
     let mut rec = CpalRecorder::new(device, 120);
     rec.start()?;
     std::thread::sleep(std::time::Duration::from_secs(secs));
@@ -248,7 +251,32 @@ fn record_test(secs: u64, device: Option<String>) -> Result<(), String> {
     println!("rate={}", r.sample_rate);
     println!("duration_ms={}", r.duration_ms());
     println!("peak={:.4}", r.peak());
+    if let Some(path) = out {
+        write_wav(&path, &r.samples, r.sample_rate).map_err(|e| e.to_string())?;
+        println!("saved={}", path.display());
+    }
     Ok(())
+}
+
+fn write_wav(path: &Path, samples: &[f32], rate: u32) -> std::io::Result<()> {
+    let data_len = (samples.len() * 2) as u32;
+    let mut b = Vec::with_capacity(44 + data_len as usize);
+    b.extend_from_slice(b"RIFF");
+    b.extend_from_slice(&(36 + data_len).to_le_bytes());
+    b.extend_from_slice(b"WAVEfmt ");
+    b.extend_from_slice(&16u32.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&1u16.to_le_bytes());
+    b.extend_from_slice(&rate.to_le_bytes());
+    b.extend_from_slice(&(rate * 2).to_le_bytes());
+    b.extend_from_slice(&2u16.to_le_bytes());
+    b.extend_from_slice(&16u16.to_le_bytes());
+    b.extend_from_slice(b"data");
+    b.extend_from_slice(&data_len.to_le_bytes());
+    for s in samples {
+        b.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+    }
+    std::fs::write(path, b)
 }
 
 fn report(result: Result<(), Box<dyn std::error::Error>>) -> ExitCode {

@@ -195,12 +195,10 @@ pub fn validate_options(options: &TranscriptionOptions) -> Result<()> {
             options.temperature
         )));
     }
-    if let Some(n) = options.window_samples {
-        if n == 0 || n % WINDOW_QUANTUM != 0 || n > N_SAMPLES {
-            return Err(Error::Unsupported(format!(
-                "window_samples must be a multiple of {WINDOW_QUANTUM} and at most {N_SAMPLES}, got {n}"
-            )));
-        }
+    if let Some(n) = options.window_samples.filter(|&n| n == 0 || n % WINDOW_QUANTUM != 0 || n > N_SAMPLES) {
+        return Err(Error::Unsupported(format!(
+            "window_samples must be a multiple of {WINDOW_QUANTUM} and at most {N_SAMPLES}, got {n}"
+        )));
     }
     Ok(())
 }
