@@ -1,6 +1,7 @@
 use std::panic::catch_unwind;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, OnceLock};
 
 use crate::config::Precision;
 use burn::backend::ndarray::NdArray;
@@ -103,6 +104,31 @@ impl Engine {
             Loaded::Wgpu(_) => "wgpu",
             Loaded::WgpuF16(_) => "wgpu-f16",
         }
+    }
+
+    /// Decodes one short 16 kHz window, zero-padded to 30 s as the model expects.
+    /// `cancelled` aborts the pass before it starts decoding.
+    pub fn decode_window(
+        &self,
+        pcm: &[f32],
+        language: Option<&str>,
+        window_samples: usize,
+        cancelled: &Arc<AtomicBool>,
+    ) -> Result<String> {
+        let options = TranscriptionOptions {
+            language: language.map(str::to_owned),
+            window_samples: Some(window_samples),
+            pad_windows: true,
+            condition_on_previous_text: false,
+            cancelled: Arc::clone(cancelled),
+            ..Default::default()
+        };
+        let result = match &self.model {
+            Loaded::Cpu(m) => transcribe(m, pcm, 16_000, &options)?,
+            Loaded::Wgpu(m) => transcribe(m, pcm, 16_000, &options)?,
+            Loaded::WgpuF16(m) => transcribe(m, pcm, 16_000, &options)?,
+        };
+        Ok(join_segments(&result.segments))
     }
 
     pub fn transcribe_pcm(

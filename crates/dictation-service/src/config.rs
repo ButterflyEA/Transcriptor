@@ -44,6 +44,13 @@ pub struct Config {
     pub paste_delay_ms: u64,
     pub max_record_secs: u32,
     pub queue_cap: usize,
+    /// Type text while speaking (tap the hotkey to start and again to stop).
+    pub stream: bool,
+    pub stream_window_secs: u32,
+    pub stream_interval_ms: u32,
+    pub stream_overlap_ms: u32,
+    /// Words closer than this to the end of the transcript may still be corrected.
+    pub stream_lock_words: usize,
 }
 
 impl Default for Config {
@@ -58,6 +65,11 @@ impl Default for Config {
             paste_delay_ms: 50,
             max_record_secs: 120,
             queue_cap: 3,
+            stream: false,
+            stream_window_secs: 3,
+            stream_interval_ms: 1000,
+            stream_overlap_ms: 400,
+            stream_lock_words: 2,
         }
     }
 }
@@ -81,6 +93,18 @@ impl Config {
         }
         if self.max_record_secs == 0 {
             return bad("max_record_secs must be >= 1");
+        }
+        if !(1..=30).contains(&self.stream_window_secs) {
+            return bad("stream_window_secs must be between 1 and 30");
+        }
+        if self.stream_interval_ms < 100 {
+            return bad("stream_interval_ms must be >= 100");
+        }
+        if self.stream_overlap_ms >= self.stream_window_secs * 1000 {
+            return bad("stream_overlap_ms must be smaller than the window");
+        }
+        if self.stream_lock_words == 0 {
+            return bad("stream_lock_words must be >= 1");
         }
         Ok(())
     }

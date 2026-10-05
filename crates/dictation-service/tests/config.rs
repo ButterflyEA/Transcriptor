@@ -74,6 +74,11 @@ fn rejects_bad_values() {
         |c| c.queue_cap = 0,
         |c| c.max_record_secs = 0,
         |c| c.hotkey = "".into(),
+        |c| c.stream_window_secs = 0,
+        |c| c.stream_window_secs = 31,
+        |c| c.stream_interval_ms = 50,
+        |c| c.stream_overlap_ms = 3000,
+        |c| c.stream_lock_words = 0,
     ];
     for mutate in mutations {
         let mut c = Config::default();
@@ -105,4 +110,12 @@ fn precision_defaults_to_f16_and_parses_from_toml() {
     assert_eq!(Config::default().precision, Precision::F16);
     let c: Config = toml::from_str("precision = \"f32\"").unwrap();
     assert_eq!(c.precision, Precision::F32);
+}
+
+#[test]
+fn stream_defaults_are_off_and_valid() {
+    let c = Config::default();
+    assert!(!c.stream);
+    assert_eq!((c.stream_window_secs, c.stream_interval_ms, c.stream_overlap_ms, c.stream_lock_words), (3, 1000, 400, 2));
+    assert!(c.validate().is_ok());
 }

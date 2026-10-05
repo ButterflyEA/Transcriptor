@@ -12,6 +12,7 @@ pub mod outworker;
 pub mod runtime;
 pub mod settings;
 pub mod stitch;
+pub mod stream;
 pub mod transcript;
 pub mod tray;
 pub mod typer;
