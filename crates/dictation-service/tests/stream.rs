@@ -96,7 +96,10 @@ fn script(texts: &[&'static str], delay_ms: u64) -> (Script, Arc<Mutex<Vec<usize
 
 #[test]
 fn growing_text_is_emitted_in_order_with_the_capture_id() {
-    let (d, _) = script(&["שלום", "שלום עולם", "שלום עולם טוב", "שלום עולם טוב מאוד"], 0);
+    let (d, _) = script(
+        &["שלום", "שלום עולם", "שלום עולם טוב", "שלום עולם טוב מאוד"],
+        0,
+    );
     let buf = Arc::new(Mutex::new(tone(1.0)));
     let t = LiveTap::new(buf.clone(), RATE);
     let grow = thread::spawn(move || {
@@ -154,7 +157,12 @@ impl WindowDecoder for Blocking {
 #[test]
 fn stop_cancels_the_pass_in_flight_and_the_loop_returns() {
     let saw_cancel = Arc::new(Mutex::new(false));
-    let events = run_for(Blocking(saw_cancel.clone()), params(30.0, 10), tap(tone(2.0)), 200);
+    let events = run_for(
+        Blocking(saw_cancel.clone()),
+        params(30.0, 10),
+        tap(tone(2.0)),
+        200,
+    );
     assert!(*saw_cancel.lock().unwrap());
     assert!(events.is_empty());
 }
@@ -200,4 +208,3 @@ fn a_pass_slower_than_three_windows_reports_slow_once() {
         .count();
     assert_eq!(slow, 1);
 }
-

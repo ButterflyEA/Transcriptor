@@ -325,9 +325,9 @@ impl OutWorker {
 
 Loop rules: take `snapshot_from(window_start)`; skip when shorter than `stream_window_secs` of new audio or when `is_speech` is false; decode; `stitch` with the previous text; feed `Transcript::on_pass`; advance `window_start` only past locked audio (estimated from the segment timestamps of the locked words); start the next pass immediately when the previous finished and at least `stream_interval_ms` passed (self-pacing); when a pass takes more than 3x the window, emit `Slow` and widen the interval; set `cancelled` on an in-flight pass when stop is requested.
 
-- [ ] **Step 1:** Failing tests with a scripted fake decoder: (a) text grows over passes and edits are emitted in order; (b) a slow fake (pass time > interval) does not queue passes; (c) silence emits nothing; (d) setting `stop` cancels an in-flight pass and the loop returns; (e) results carry the capture id.
-- [ ] **Step 2:** Implement `config` keys, then the loop.
-- [ ] **Step 3:** Run tests and clippy; commit `feat(dictation): engine stream loop with self-pacing`.
+- [x] **Step 1:** Failing tests with a scripted fake decoder: (a) text grows over passes and edits are emitted in order; (b) a slow fake (pass time > interval) does not queue passes; (c) silence emits nothing; (d) setting `stop` cancels an in-flight pass and the loop returns; (e) results carry the capture id.
+- [x] **Step 2:** Implement `config` keys, then the loop.
+- [x] **Step 3:** Run tests and clippy; commit `feat(dictation): engine stream loop with self-pacing`.
 
 ### Task D.2: Runtime and controller wiring (still log-only)
 
@@ -335,9 +335,9 @@ Loop rules: take `snapshot_from(window_start)`; skip when shorter than `stream_w
 - Modify: `crates/dictation-service/src/{controller,runtime}.rs`
 - Test: `crates/dictation-service/tests/controller.rs`, `tests/runtime.rs`
 
-- [ ] **Step 1:** Failing controller tests: with `stream = true` the chord toggles (first press starts, second stops); a hold does not stop on release; a press during finalising is queued as today; results tagged with an old capture id are dropped.
-- [ ] **Step 2:** Implement: the engine thread starts `StreamLoop` on `Start` and stops it before the final pass; stream and final passes are serialised on the engine thread; the coordinator forwards `StreamEvent::Edit` to the output worker.
-- [ ] **Step 3:** Run all dictation-service tests; commit `feat(dictation): stream mode in controller and runtime`.
+- [x] **Step 1:** Failing controller tests: with `stream = true` the chord toggles (first press starts, second stops); a hold does not stop on release; a press during finalising is queued as today; results tagged with an old capture id are dropped.
+- [x] **Step 2:** Implement: the engine thread starts `StreamLoop` on `Start` and stops it before the final pass; stream and final passes are serialised on the engine thread; the coordinator forwards `StreamEvent::Edit` to the output worker.
+- [x] **Step 3:** Run all dictation-service tests; commit `feat(dictation): stream mode in controller and runtime`.
 
 **Review gate:** stop for the user. The user runs with logging and compares the stream of edits against what they said.
 

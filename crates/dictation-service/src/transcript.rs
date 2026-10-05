@@ -96,7 +96,11 @@ impl Transcript {
                 return None;
             }
             let extra = &w[self.typed.len()..];
-            let lead = if self.locked.is_empty() && self.typed.is_empty() { "" } else { " " };
+            let lead = if self.locked.is_empty() && self.typed.is_empty() {
+                ""
+            } else {
+                " "
+            };
             let text = format!("{lead}{}", extra.join(" "));
             self.typed.extend(extra.iter().cloned());
             return Some(Edit::Append(text));

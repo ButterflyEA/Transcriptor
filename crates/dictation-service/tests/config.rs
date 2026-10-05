@@ -116,6 +116,14 @@ fn precision_defaults_to_f16_and_parses_from_toml() {
 fn stream_defaults_are_off_and_valid() {
     let c = Config::default();
     assert!(!c.stream);
-    assert_eq!((c.stream_window_secs, c.stream_interval_ms, c.stream_overlap_ms, c.stream_lock_words), (3, 1000, 400, 2));
+    assert_eq!(
+        (
+            c.stream_window_secs,
+            c.stream_interval_ms,
+            c.stream_overlap_ms,
+            c.stream_lock_words
+        ),
+        (3, 1000, 400, 2)
+    );
     assert!(c.validate().is_ok());
 }

@@ -4,8 +4,8 @@
 //! Audio is cut into windows of `window_samples`; consecutive windows overlap
 //! by `overlap_samples`. A completed window is final and is stitched onto the
 //! text so far, the window being recorded is re-decoded every pass.
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -37,16 +37,26 @@ pub struct EngineDecoder<'a> {
 impl WindowDecoder for EngineDecoder<'_> {
     fn decode(&self, pcm: &[f32], cancelled: &Arc<AtomicBool>) -> Result<String, String> {
         self.engine
-            .decode_window(pcm, self.language.as_deref(), self.window_samples, cancelled)
+            .decode_window(
+                pcm,
+                self.language.as_deref(),
+                self.window_samples,
+                cancelled,
+            )
             .map_err(|e| e.to_string())
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StreamEvent {
-    Edit { capture_id: u64, edit: Edit },
+    Edit {
+        capture_id: u64,
+        edit: Edit,
+    },
     /// A pass took more than three windows; the machine is too slow to keep up.
-    Slow { pass_ms: u64 },
+    Slow {
+        pass_ms: u64,
+    },
 }
 
 #[derive(Clone, Debug)]

@@ -12,7 +12,10 @@ fn normalise_strips_punctuation_and_niqqud() {
 
 #[test]
 fn agreed_prefix_ignores_punctuation_flips() {
-    assert_eq!(agreed_prefix_len(&v("שלום, זאת הקלטה"), &v("שלום. זאת הקלטת")), 2);
+    assert_eq!(
+        agreed_prefix_len(&v("שלום, זאת הקלטה"), &v("שלום. זאת הקלטת")),
+        2
+    );
 }
 
 #[test]
@@ -32,7 +35,10 @@ fn changed_tail_is_replaced_with_exact_backspace_count() {
     );
     assert_eq!(
         t.on_pass("בגבעת רפאל"),
-        Some(Edit::Replace { backspaces: 4, text: "רפאל".into() })
+        Some(Edit::Replace {
+            backspaces: 4,
+            text: "רפאל".into()
+        })
     );
 }
 
@@ -49,7 +55,10 @@ fn agreed_old_words_lock_and_later_passes_cover_only_new_audio() {
     t.on_pass("אחד שניים שלושה ארבעה");
     t.on_pass("אחד שניים שלושה ארבעה");
     assert_eq!(t.locked_words(), 2);
-    assert_eq!(t.on_pass("שלושה ארבעה חמישה"), Some(Edit::Append(" חמישה".into())));
+    assert_eq!(
+        t.on_pass("שלושה ארבעה חמישה"),
+        Some(Edit::Append(" חמישה".into()))
+    );
 }
 
 #[test]

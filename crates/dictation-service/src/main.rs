@@ -447,13 +447,24 @@ fn stream_sweep(
         default_device(),
         precision,
     )?;
-    println!("backend={} audio_s={:.1}", engine.backend_name(), pcm16.len() as f64 / 16_000.0);
+    println!(
+        "backend={} audio_s={:.1}",
+        engine.backend_name(),
+        pcm16.len() as f64 / 16_000.0
+    );
 
     // Warm up so the first window length is not penalised by shader compilation.
-    engine.transcribe_windows(&pcm16[..16_000.min(pcm16.len())], 16_000, Some(language), Some(16_000), pad)?;
+    engine.transcribe_windows(
+        &pcm16[..16_000.min(pcm16.len())],
+        16_000,
+        Some(language),
+        Some(16_000),
+        pad,
+    )?;
 
     let t = Instant::now();
-    let reference = join_segments(&engine.transcribe_windows(&pcm16, 16_000, Some(language), None, false)?);
+    let reference =
+        join_segments(&engine.transcribe_windows(&pcm16, 16_000, Some(language), None, false)?);
     println!("full30 elapsed_ms={}", t.elapsed().as_millis());
     println!("REF: {reference}");
 

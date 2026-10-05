@@ -5,12 +5,15 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use crate::audio::{CpalRecorder, Recorder, Recording};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::audio::{CpalRecorder, LiveTap, Recorder, Recording};
 use crate::config::{Config, parse_model};
 use crate::controller::{Action, Controller, Input, Status};
 use crate::engine::{Engine, resolve_model_dir};
 use crate::output::{Paster, system_paster};
 use crate::outworker::{Job as OutJob, OutWorker};
+use crate::stream::{EngineDecoder, StreamEvent, StreamLoop, StreamParams};
 use crate::typer::{NullTyper, Typer};
 
 pub enum RuntimeMsg {
@@ -23,6 +26,8 @@ pub enum RuntimeMsg {
     Reload(Box<Config>),
     /// While paused, new recordings are refused (a recording in progress can still stop).
     SetPaused(bool),
+    /// Internal: a live-transcription event from the engine thread.
+    Stream(StreamEvent),
     Shutdown,
 }
 
@@ -33,6 +38,12 @@ pub fn blocked_by_pause(paused: bool, msg: &RuntimeMsg) -> bool {
 
 enum Job {
     Transcribe(Recording),
+    /// Live-transcribe a capture in progress until stop is set.
+    Stream {
+        tap: LiveTap,
+        capture_id: u64,
+        stop: Arc<AtomicBool>,
+    },
     Reload(Box<Config>),
 }
 
@@ -134,6 +145,22 @@ fn engine_thread(config: Config, jobs: mpsc::Receiver<Job>, tx: Sender<RuntimeMs
                 };
                 send(Input::Transcribed(result));
             }
+            Job::Stream {
+                tap,
+                capture_id,
+                stop,
+            } => {
+                let Some(e) = &engine else { continue };
+                let params = StreamParams::from_config(&config);
+                let decoder = EngineDecoder {
+                    engine: e,
+                    language: config.language_option(),
+                    window_samples: params.window_samples,
+                };
+                StreamLoop::new(decoder, params).run(tap, capture_id, stop, |ev| {
+                    let _ = tx.send(RuntimeMsg::Stream(ev));
+                });
+            }
             Job::Reload(new) => {
                 let model_changed = engine.is_none()
                     || new.model != config.model
@@ -218,6 +245,7 @@ pub fn spawn_with_typer(
             let mut capture_no = 0u64;
             let mut pending: VecDeque<Input> = VecDeque::new();
             let mut paused = false;
+            let mut stream_stop: Option<Arc<AtomicBool>> = None;
             on_status(Status::Loading);
 
             while let Ok(msg) = rx.recv() {
@@ -243,6 +271,19 @@ pub fn spawn_with_typer(
                         }
                         let _ = job_tx.send(Job::Reload(cfg));
                     }
+                    // Stream mode is tap-to-toggle: a press ends a recording in progress and the release is ignored.
+                    RuntimeMsg::Input(Input::Press) if config.stream && controller.is_recording() => {
+                        pending.push_back(Input::Release)
+                    }
+                    RuntimeMsg::Input(Input::Release) if config.stream => {}
+                    RuntimeMsg::Stream(StreamEvent::Edit { capture_id, edit }) => {
+                        eprintln!("stream[{capture_id}] {edit:?}");
+                    }
+                    RuntimeMsg::Stream(StreamEvent::Slow { pass_ms }) => {
+                        on_notify(format!(
+                            "Streaming is too slow on this machine ({pass_ms} ms per pass); use normal dictation."
+                        ));
+                    }
                     RuntimeMsg::Input(i) => pending.push_back(i),
                 }
                 while let Some(input) = pending.pop_front() {
@@ -253,6 +294,15 @@ pub fn spawn_with_typer(
                                 if let Err(e) = recorder.start() {
                                     pending.push_back(Input::CaptureFailed(e));
                                 } else {
+                                    if config.stream && let Some(tap) = recorder.tap() {
+                                        let stop = Arc::new(AtomicBool::new(false));
+                                        stream_stop = Some(stop.clone());
+                                        let _ = job_tx.send(Job::Stream {
+                                            tap,
+                                            capture_id: capture_no,
+                                            stop,
+                                        });
+                                    }
                                     let (n, tx, secs) =
                                         (capture_no, timer_tx.clone(), config.max_record_secs);
                                     thread::spawn(move || {
@@ -261,10 +311,15 @@ pub fn spawn_with_typer(
                                     });
                                 }
                             }
-                            Action::StopCapture => pending.push_back(match recorder.stop() {
+                            Action::StopCapture => {
+                                if let Some(stop) = stream_stop.take() {
+                                    stop.store(true, Ordering::SeqCst);
+                                }
+                                pending.push_back(match recorder.stop() {
                                 Ok(r) => Input::Captured(r),
                                 Err(e) => Input::CaptureFailed(e),
-                            }),
+                                })
+                            }
                             Action::Transcribe(rec) => {
                                 if job_tx.send(Job::Transcribe(rec)).is_err() {
                                     pending.push_back(Input::Transcribed(Err(
