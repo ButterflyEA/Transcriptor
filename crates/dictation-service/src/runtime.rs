@@ -9,7 +9,9 @@ use crate::audio::{CpalRecorder, Recorder, Recording};
 use crate::config::{Config, parse_model};
 use crate::controller::{Action, Controller, Input, Status};
 use crate::engine::{Engine, resolve_model_dir};
-use crate::output::{PasteOutcome, Paster, system_paster};
+use crate::output::{Paster, system_paster};
+use crate::outworker::{Job as OutJob, OutWorker};
+use crate::typer::{NullTyper, Typer};
 
 pub enum RuntimeMsg {
     Input(Input),
@@ -161,11 +163,30 @@ pub fn spawn(config: Config, on_status: StatusFn, on_notify: NotifyFn) -> Runtim
     spawn_with(config, Box::new(recorder), paster, on_status, on_notify)
 }
 
-/// Like `spawn` but with injectable recorder and paster (used by tests).
+/// Like `spawn_with_typer`, with typing disabled.
 pub fn spawn_with(
     config: Config,
+    recorder: Box<dyn Recorder>,
+    paster: Box<dyn Paster>,
+    on_status: StatusFn,
+    on_notify: NotifyFn,
+) -> Runtime {
+    spawn_with_typer(
+        config,
+        recorder,
+        paster,
+        Box::new(NullTyper),
+        on_status,
+        on_notify,
+    )
+}
+
+/// Like `spawn` but with injectable recorder, paster and typer (used by tests).
+pub fn spawn_with_typer(
+    config: Config,
     mut recorder: Box<dyn Recorder>,
-    mut paster: Box<dyn Paster>,
+    paster: Box<dyn Paster>,
+    typer: Box<dyn Typer>,
     on_status: StatusFn,
     on_notify: NotifyFn,
 ) -> Runtime {
@@ -182,6 +203,14 @@ pub fn spawn_with(
     let status = Arc::new(Mutex::new(Status::Loading));
     let status_w = Arc::clone(&status);
     let timer_tx = tx.clone();
+    let on_notify = Arc::new(Mutex::new(on_notify));
+    let worker_notify = Arc::clone(&on_notify);
+    let out = OutWorker::spawn(
+        paster,
+        typer,
+        Box::new(move |m| (worker_notify.lock().unwrap())(m)),
+    );
+    let on_notify = move |m: String| (on_notify.lock().unwrap())(m);
     let handle = thread::Builder::new()
         .name("coordinator".into())
         .spawn(move || {
@@ -243,13 +272,7 @@ pub fn spawn_with(
                                     )));
                                 }
                             }
-                            Action::Paste(text) => match paster.paste(&text) {
-                                Ok(PasteOutcome::Pasted) => {}
-                                Ok(PasteOutcome::ClipboardOnly(why)) => {
-                                    on_notify(format!("copied to clipboard, not pasted: {why}"))
-                                }
-                                Err(e) => on_notify(format!("paste failed: {e}")),
-                            },
+                            Action::Paste(text) => out.send(OutJob::Paste(text)),
                             Action::SetStatus(s) => {
                                 *status_w.lock().unwrap() = s;
                                 on_status(s);
@@ -259,6 +282,7 @@ pub fn spawn_with(
                     }
                 }
             }
+            out.shutdown();
         })
         .expect("spawn coordinator thread");
 

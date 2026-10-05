@@ -41,13 +41,51 @@ pub fn push_capped(buf: &mut Vec<f32>, chunk: &[f32], max: usize) {
     buf.extend_from_slice(&chunk[..chunk.len().min(room)]);
 }
 
+/// Cloneable read handle on an in-progress capture (mono samples at the device rate).
+#[derive(Clone)]
+pub struct LiveTap {
+    buf: Arc<Mutex<Vec<f32>>>,
+    rate: u32,
+}
+
+impl LiveTap {
+    pub fn new(buf: Arc<Mutex<Vec<f32>>>, rate: u32) -> Self {
+        Self { buf, rate }
+    }
+
+    pub fn len(&self) -> usize {
+        self.buf.lock().unwrap().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn rate(&self) -> u32 {
+        self.rate
+    }
+
+    /// Samples captured after `offset`, the sample rate, and the new total length.
+    pub fn snapshot_from(&self, offset: usize) -> (Vec<f32>, u32, usize) {
+        let buf = self.buf.lock().unwrap();
+        let total = buf.len();
+        let tail = buf.get(offset..).map(<[f32]>::to_vec).unwrap_or_default();
+        (tail, self.rate, total)
+    }
+}
+
 pub trait Recorder: Send {
+    /// Live view of the capture between `start` and `stop`, if supported.
+    fn tap(&self) -> Option<LiveTap> {
+        None
+    }
     fn start(&mut self) -> Result<(), String>;
     /// Stops the recording started by `start` and returns what was captured.
     fn stop(&mut self) -> Result<Recording, String>;
 }
 
 enum Msg {
+    Tap(Sender<Option<LiveTap>>),
     Start(Sender<Result<(), String>>),
     Stop(Sender<Result<Recording, String>>),
 }
@@ -80,6 +118,10 @@ impl CpalRecorder {
 }
 
 impl Recorder for CpalRecorder {
+    fn tap(&self) -> Option<LiveTap> {
+        self.call(Msg::Tap).ok().flatten()
+    }
+
     fn start(&mut self) -> Result<(), String> {
         self.call(Msg::Start)?
     }
@@ -101,6 +143,13 @@ fn worker(rx: Receiver<Msg>, device_name: Option<String>, max_secs: u32) {
     let mut active: Option<Active> = None;
     while let Ok(msg) = rx.recv() {
         match msg {
+            Msg::Tap(reply) => {
+                let _ = reply.send(
+                    active
+                        .as_ref()
+                        .map(|a| LiveTap::new(Arc::clone(&a.buf), a.rate)),
+                );
+            }
             Msg::Start(reply) => {
                 active = None;
                 let result = open(device_name.as_deref(), max_secs).map(|a| {

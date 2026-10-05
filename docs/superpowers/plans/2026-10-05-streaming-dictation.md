@@ -254,9 +254,9 @@ fn no_overlap_just_concatenates() {
 - Produces: `#[derive(Clone)] pub struct LiveTap { /* Arc<Mutex<Vec<f32>>>, rate, max */ }` with `pub fn snapshot_from(&self, offset: usize) -> (Vec<f32>, u32, usize)` returning samples after `offset` (mono, device rate), the rate, and the new total length. Also `pub fn len(&self) -> usize`.
 - Produces: `Recorder::tap(&self) -> Option<LiveTap>`, implemented by `CpalRecorder`; `Some` between `start` and `stop`.
 
-- [ ] **Step 1:** Failing tests: push 1000 samples, `snapshot_from(0)` returns 1000; push 500 more, `snapshot_from(1000)` returns the 500 and total 1500; offsets past the end return an empty vec; the tap is cloneable and sees later pushes.
-- [ ] **Step 2:** Implement over the existing buffer lock (reuse `push_capped`). The cpal callback and `snapshot_from` share one `Arc<Mutex<..>>`.
-- [ ] **Step 3:** Run audio tests; commit `feat(dictation): LiveTap snapshot of in-progress capture`.
+- [x] **Step 1:** Failing tests: push 1000 samples, `snapshot_from(0)` returns 1000; push 500 more, `snapshot_from(1000)` returns the 500 and total 1500; offsets past the end return an empty vec; the tap is cloneable and sees later pushes.
+- [x] **Step 2:** Implement over the existing buffer lock (reuse `push_capped`). The cpal callback and `snapshot_from` share one `Arc<Mutex<..>>`.
+- [x] **Step 3:** Run audio tests; commit `feat(dictation): LiveTap snapshot of in-progress capture`.
 
 ### Task C.2: Output worker thread
 
@@ -280,10 +280,10 @@ impl OutWorker {
 }
 ```
 
-- [ ] **Step 1:** Failing test with a fake `Paster`/`Typer` recording calls: jobs sent in order are executed in order; `flush()` returns only after all prior jobs ran; `send` returns immediately even if the fake sleeps 200 ms.
-- [ ] **Step 2:** Implement with one `mpsc` channel and one thread.
-- [ ] **Step 3:** Move the coordinator's paste call to `OutWorker::send(Job::Paste(..))`; flush before shutdown. Re-run `tests/runtime.rs`.
-- [ ] **Step 4:** Commit `feat(dictation): output worker thread` (this also removes the recording overshoot during the paste delay).
+- [x] **Step 1:** Failing test with a fake `Paster`/`Typer` recording calls: jobs sent in order are executed in order; `flush()` returns only after all prior jobs ran; `send` returns immediately even if the fake sleeps 200 ms.
+- [x] **Step 2:** Implement with one `mpsc` channel and one thread.
+- [x] **Step 3:** Move the coordinator's paste call to `OutWorker::send(Job::Paste(..))`; flush before shutdown. Re-run `tests/runtime.rs`.
+- [x] **Step 4:** Commit `feat(dictation): output worker thread` (this also removes the recording overshoot during the paste delay).
 
 ### Task C.3: `Typer` implementations
 
@@ -296,11 +296,11 @@ impl OutWorker {
 - Windows: `SendInput` with `KEYEVENTF_UNICODE` (surrogate pairs for non-BMP); backspace via `VK_BACK`. Linux X11: `xdotool type`/`key BackSpace`. Wayland: `wtype`, `supports_backspace = false` unless evdev is active.
 - Produces a pure helper `pub fn utf16_units(s: &str) -> Vec<u16>` for testing.
 
-- [ ] **Step 1:** Failing test for `utf16_units` (Hebrew letters map to one unit each; an emoji to two).
-- [ ] **Step 2:** Implement the helper and the Windows impl, then a hidden `type-test "text" --backspace N` command (like `paste-test`) for manual checks.
+- [x] **Step 1:** Failing test for `utf16_units` (Hebrew letters map to one unit each; an emoji to two).
+- [x] **Step 2:** Implement the helper and the Windows impl, then a hidden `type-test "text" --backspace N` command (like `paste-test`) for manual checks.
 - [ ] **Step 3:** Manual check on Windows in Notepad: types Hebrew text, backspaces N characters. Record result.
 - [ ] **Step 4:** Linux impls compile on the Linux target in a scratch crate (as done for evdev); not run.
-- [ ] **Step 5:** Commit `feat(dictation): typer with unicode injection`.
+- [x] **Step 5:** Commit `feat(dictation): typer with unicode injection`.
 
 **Review gate:** stop for the user. User tries `type-test` in their own apps (also feeds the backspace compatibility matrix).
 

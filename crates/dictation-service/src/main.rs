@@ -59,6 +59,13 @@ enum Cmd {
     /// Developer tool: copy text to the clipboard and paste it after 3 seconds.
     #[command(hide = true)]
     PasteTest { text: String },
+    /// Developer tool: type text into the focused window, then backspace some characters.
+    #[command(hide = true)]
+    TypeTest {
+        text: String,
+        #[arg(long, default_value_t = 0)]
+        backspace: usize,
+    },
     /// Developer tool: record from the microphone and print level stats.
     #[command(hide = true)]
     RecordTest {
@@ -118,6 +125,7 @@ fn main() -> ExitCode {
         Some(Cmd::VerifyModel { dir }) => verify_model(dir),
         Some(Cmd::Settings) => report(dictation_service::settings::run()),
         Some(Cmd::PasteTest { text }) => report(paste_test(&text)),
+        Some(Cmd::TypeTest { text, backspace }) => report(type_test(&text, backspace)),
         Some(Cmd::RecordTest { secs, device, out }) => match record_test(secs, device, out) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
@@ -296,6 +304,20 @@ fn paste_test(text: &str) -> Result<(), Box<dyn std::error::Error>> {
         PasteOutcome::Pasted => eprintln!("pasted"),
         PasteOutcome::ClipboardOnly(why) => eprintln!("clipboard only: {why}"),
     }
+    Ok(())
+}
+
+fn type_test(text: &str, backspace: usize) -> Result<(), Box<dyn std::error::Error>> {
+    use dictation_service::typer::system_typer;
+    eprintln!("focus a text box; typing in 3 seconds...");
+    std::thread::sleep(std::time::Duration::from_secs(3));
+    let mut typer = system_typer();
+    typer.type_text(text)?;
+    if backspace > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        typer.backspace(backspace)?;
+    }
+    eprintln!("done (supports_backspace={})", typer.supports_backspace());
     Ok(())
 }
 
