@@ -22,15 +22,15 @@
 
 #[cfg(feature = "audio")]
 use crate::audio::resample::resample_to_16k;
+use crate::config::ModelSize;
 use crate::decoding::beam::{BeamOptions, beam_search};
 use crate::decoding::greedy::{GreedyOptions, greedy_search};
-use crate::decoding::{assemble_segments, detect_language};
 use crate::decoding::segments::decode_segment_text;
+use crate::decoding::{assemble_segments, detect_language};
 use crate::features::mel::FeatureExtractor;
-use crate::features::window::{N_FRAMES, split_chunks};
+use crate::features::window::{N_SAMPLES, WINDOW_QUANTUM, split_chunks, split_windows};
 use crate::model::whisper::Whisper;
 use crate::tokenizer::whisper::{Task, TextTokenizer};
-use crate::config::ModelSize;
 use crate::{Error, Result};
 use burn::module::Module;
 use burn::tensor::backend::Backend;
@@ -118,6 +118,13 @@ pub struct TranscriptionOptions {
     /// Best-effort cancellation: set true and the decoder stops cleanly
     /// after the current window, returning segments produced so far.
     pub cancelled: Arc<AtomicBool>,
+    /// Decode in windows of this many 16 kHz samples instead of 30 s. Must be a
+    /// multiple of 320 (20 ms) and at most 30 s. `None` keeps the 30 s path.
+    pub window_samples: Option<usize>,
+    /// With `window_samples`, zero-pad each window up to 30 s before encoding
+    /// (the shape the model was trained on) while still reporting only the
+    /// window's own time range. Costs a full encoder pass per window.
+    pub pad_windows: bool,
 }
 
 impl Default for TranscriptionOptions {
@@ -134,6 +141,8 @@ impl Default for TranscriptionOptions {
             initial_prompt: None,
             progress: None,
             cancelled: Arc::new(AtomicBool::new(false)),
+            window_samples: None,
+            pad_windows: false,
         }
     }
 }
@@ -146,12 +155,17 @@ impl std::fmt::Debug for TranscriptionOptions {
             .field("beam_size", &self.beam_size)
             .field("best_of", &self.best_of)
             .field("temperature", &self.temperature)
-            .field("condition_on_previous_text", &self.condition_on_previous_text)
+            .field(
+                "condition_on_previous_text",
+                &self.condition_on_previous_text,
+            )
             .field("no_speech_threshold", &self.no_speech_threshold)
             .field("logprob_threshold", &self.logprob_threshold)
             .field("initial_prompt", &self.initial_prompt)
             .field("progress", &"<streaming callback>")
             .field("cancelled", &self.cancelled.load(Ordering::SeqCst))
+            .field("window_samples", &self.window_samples)
+            .field("pad_windows", &self.pad_windows)
             .finish()
     }
 }
@@ -180,6 +194,13 @@ pub fn validate_options(options: &TranscriptionOptions) -> Result<()> {
             "temperature must be 0.0 in v1 (deterministic decode), got {}",
             options.temperature
         )));
+    }
+    if let Some(n) = options.window_samples {
+        if n == 0 || n % WINDOW_QUANTUM != 0 || n > N_SAMPLES {
+            return Err(Error::Unsupported(format!(
+                "window_samples must be a multiple of {WINDOW_QUANTUM} and at most {N_SAMPLES}, got {n}"
+            )));
+        }
     }
     Ok(())
 }
@@ -292,7 +313,29 @@ pub fn transcribe<B: Backend>(
             ));
         }
     };
-    let chunks = split_chunks(&pcm16);
+    // (audio, start_ms, length_ms) per window. The 30 s path pads to 30 s; the
+    // short-window path zero-pads only up to the next 20 ms.
+    let chunks: Vec<(Vec<f32>, u32, u32)> = match options.window_samples {
+        None => split_chunks(&pcm16)
+            .into_iter()
+            .enumerate()
+            .map(|(ci, (c, _))| (c, (ci * 30_000) as u32, 30_000))
+            .collect(),
+        Some(w) => split_windows(pcm16.len(), w)
+            .into_iter()
+            .map(|(s, e)| {
+                let mut c = pcm16[s..e].to_vec();
+                let padded = if options.pad_windows {
+                    N_SAMPLES
+                } else {
+                    c.len().div_ceil(WINDOW_QUANTUM) * WINDOW_QUANTUM
+                };
+                c.resize(padded, 0.0);
+                let ms = |n: usize| (n * 1000 / 16_000) as u32;
+                (c, ms(s), ms(e - s))
+            })
+            .collect(),
+    };
     if chunks.is_empty() {
         emit(
             options,
@@ -339,8 +382,8 @@ pub fn transcribe<B: Backend>(
     // into the reported transcript.
     let audio_ms = (pcm16.len() as u64 * 1000 / 16_000) as u32;
     let windows = chunks.len();
-    for (ci, (chunk, _)) in chunks.iter().enumerate() {
-        let seek_ms = (ci * 30_000) as u32;
+    for (ci, (chunk, seek_ms, len_ms)) in chunks.iter().enumerate() {
+        let (seek_ms, len_ms) = (*seek_ms, *len_ms);
         if options.cancelled.load(Ordering::SeqCst) {
             log::info!("decode: window {}/{}: cancelled", ci + 1, windows);
             break;
@@ -358,12 +401,12 @@ pub fn transcribe<B: Backend>(
             ci + 1,
             windows,
             ms_clock(seek_ms),
-            ms_clock(seek_ms + 30_000)
+            ms_clock(seek_ms + len_ms)
         );
 
         let mel = fe.log_mel(chunk)?;
         let xa = whisper.forward_encoder(Tensor::<B, 3>::from_data(
-            TensorData::new(mel, [1, whisper.dims.n_mels, N_FRAMES]),
+            TensorData::new(mel, [1, whisper.dims.n_mels, chunk.len() / 160]),
             &device,
         ));
 
@@ -431,12 +474,20 @@ pub fn transcribe<B: Backend>(
             segments.extend(assembled);
         }
         clamp_segments_to_audio(&mut segments[from..], audio_ms);
+        for segment in &mut segments[from..] {
+            segment.end = segment.end.min(seek_ms + len_ms);
+        }
         for segment in &segments[from..] {
             log::info!("  {}", segment_progress(segment));
             emit(options, &ProgressUpdate::Segment(segment.clone()));
         }
         if options.condition_on_previous_text {
-            context.extend(tokens[prefix_len..].iter().copied().filter(|&t| t != tokenizer.eot()));
+            context.extend(
+                tokens[prefix_len..]
+                    .iter()
+                    .copied()
+                    .filter(|&t| t != tokenizer.eot()),
+            );
         }
     }
     emit(
@@ -460,7 +511,8 @@ pub fn transcribe<B: Backend>(
 /// `unknown language auto`. Resolved in one place so the two front ends
 /// cannot drift apart.
 pub fn requested_language(raw: Option<&str>) -> Option<String> {
-    raw.filter(|language| *language != "auto").map(str::to_string)
+    raw.filter(|language| *language != "auto")
+        .map(str::to_string)
 }
 
 /// Clamp every segment end to the real audio duration.

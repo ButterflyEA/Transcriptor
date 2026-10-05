@@ -53,16 +53,41 @@ pub fn stft_power(samples: &[f32], config: &StftConfig) -> Vec<Vec<f32>> {
     let n_frames = samples.len() / config.hop_length + 1;
     let window = hann(config.n_fft);
 
-    let mut out = Vec::with_capacity(n_frames);
-    for t in 0..n_frames {
+    let n_freq = config.n_fft / 2 + 1;
+    let frame_power = |t: usize| -> Vec<f32> {
         let start = t * config.hop_length;
-        let mut frame = Vec::with_capacity(config.n_fft);
-        for (b, &w) in window.iter().enumerate() {
-            frame.push(padded[start + b] * w);
+        let frame: Vec<f32> = window
+            .iter()
+            .enumerate()
+            .map(|(b, &w)| padded[start + b] * w)
+            .collect();
+        // An all-zero frame (the padding of a short window) has exactly zero
+        // power, so the DFT can be skipped without changing any value.
+        if frame.iter().all(|&x| x == 0.0) {
+            vec![0.0; n_freq]
+        } else {
+            dft_power(&frame)
         }
-        out.push(dft_power(&frame));
-    }
-    out
+    };
+
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(n_frames.max(1));
+    let per = n_frames.div_ceil(threads).max(1);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..n_frames)
+            .step_by(per)
+            .map(|lo| {
+                let hi = (lo + per).min(n_frames);
+                let frame_power = &frame_power;
+                scope.spawn(move || (lo..hi).map(frame_power).collect::<Vec<_>>())
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("stft worker panicked"))
+            .collect()
+    })
 }
 
 #[cfg(test)]

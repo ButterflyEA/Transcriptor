@@ -67,13 +67,16 @@ pub struct Encoder<B: Backend> {
 }
 
 impl<B: Backend> Encoder<B> {
-    /// mel `[1, n_mels, 3000]` -> features `[1, 1500, n_state]`.
+    /// mel `[1, n_mels, 3000]` -> features `[1, 1500, n_state]`. Any even frame
+    /// count up to 3000 is accepted and yields `frames / 2` steps.
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 3> {
         let mut x = gelu_erf(self.conv1.forward(x, 1)); // [1, n_state, 3000]
         x = gelu_erf(self.conv2.forward(x, 2)); // [1, n_state, 1500]
-        x = x
-            .swap_dims(1, 2)
-            .add(self.positional_embedding.val().unsqueeze::<3>()); // [1, 1500, n_state]
+        // Shorter-than-30 s input uses the first `len` rows of the table; at
+        // 1500 steps that is the whole table.
+        let [_, len, n_state] = x.clone().swap_dims(1, 2).shape().dims();
+        let pos = self.positional_embedding.val().slice([0..len, 0..n_state]);
+        x = x.swap_dims(1, 2).add(pos.unsqueeze::<3>()); // [1, 1500, n_state]
         for block in &self.blocks {
             x = block.forward(x, None, None);
         }

@@ -44,6 +44,13 @@ impl FeatureExtractor {
     }
 
     pub fn log_mel(&self, samples: &[f32]) -> Result<Vec<f32>> {
+        if samples.len() <= self.n_fft / 2 {
+            return Err(crate::error::Error::Unsupported(format!(
+                "audio too short for features: {} samples, need more than {}",
+                samples.len(),
+                self.n_fft / 2
+            )));
+        }
         let cfg = StftConfig {
             n_fft: self.n_fft,
             hop_length: self.hop_length,

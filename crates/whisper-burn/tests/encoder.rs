@@ -218,3 +218,36 @@ fn encoder_forward_matches_manual_pipeline() {
         "output should vary across features: {g:?}"
     );
 }
+
+#[test]
+fn short_input_uses_a_prefix_of_the_positional_table() {
+    let device = NdArrayDevice::default();
+    let enc = small_encoder(&device);
+    let full: Vec<f32> = (0..16).map(|i| (i as f32 * 0.37).sin()).collect();
+    let x = |frames: usize| -> Tensor<B, 3> {
+        let mut d = Vec::new();
+        for ch in 0..2 {
+            d.extend_from_slice(&full[ch * 8..ch * 8 + frames]);
+        }
+        Tensor::from_data(TensorData::new(d, [1, 2, frames]), &device)
+    };
+    let got = enc.forward(x(4));
+    assert_eq!(got.shape().dims(), [1, 2, 4]);
+
+    let mut y = gelu_erf(enc.conv1.forward(x(4), 1));
+    y = gelu_erf(enc.conv2.forward(y, 2));
+    y = y.swap_dims(1, 2).add(
+        enc.positional_embedding
+            .val()
+            .slice([0..2, 0..4])
+            .unsqueeze::<3>(),
+    );
+    for blk in &enc.blocks {
+        y = blk.forward(y, None, None);
+    }
+    let expected = enc.ln_post.forward(y).into_data().to_vec::<f32>().unwrap();
+    let g = got.into_data().to_vec::<f32>().unwrap();
+    for (a, b) in g.iter().zip(expected.iter()) {
+        assert!((a - b).abs() < 1e-5);
+    }
+}

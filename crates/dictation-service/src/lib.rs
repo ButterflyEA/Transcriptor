@@ -6,6 +6,7 @@ pub mod control;
 pub mod controller;
 pub mod engine;
 pub mod hotkey;
+pub mod metrics;
 pub mod output;
 pub mod runtime;
 pub mod settings;

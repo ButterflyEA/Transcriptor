@@ -334,3 +334,17 @@ mod network {
         );
     }
 }
+
+#[test]
+fn window_samples_must_be_a_20ms_multiple_within_30s() {
+    let with = |n| TranscriptionOptions {
+        window_samples: Some(n),
+        ..Default::default()
+    };
+    assert!(validate_options(&with(16_000 * 3)).is_ok());
+    assert!(validate_options(&with(480_000)).is_ok());
+    assert!(validate_options(&with(0)).is_err());
+    assert!(validate_options(&with(16_001)).is_err());
+    assert!(validate_options(&with(480_320)).is_err());
+    assert!(validate_options(&TranscriptionOptions::default()).is_ok());
+}

@@ -111,8 +111,25 @@ impl Engine {
         sample_rate: u32,
         language: Option<&str>,
     ) -> Result<String> {
+        let segments = self.transcribe_windows(pcm, sample_rate, language, None, false)?;
+        Ok(join_segments(&segments))
+    }
+
+    /// Decodes in windows of `window_samples` (16 kHz samples, a multiple of
+    /// 320) instead of 30 s. Windows are independent: no text is carried over.
+    pub fn transcribe_windows(
+        &self,
+        pcm: &[f32],
+        sample_rate: u32,
+        language: Option<&str>,
+        window_samples: Option<usize>,
+        pad_windows: bool,
+    ) -> Result<Vec<TranscriptionSegment>> {
         let options = TranscriptionOptions {
             language: language.map(str::to_owned),
+            window_samples,
+            pad_windows,
+            condition_on_previous_text: window_samples.is_none(),
             ..Default::default()
         };
         let result = match &self.model {
@@ -120,6 +137,6 @@ impl Engine {
             Loaded::Wgpu(m) => transcribe(m, pcm, sample_rate, &options)?,
             Loaded::WgpuF16(m) => transcribe(m, pcm, sample_rate, &options)?,
         };
-        Ok(join_segments(&result.segments))
+        Ok(result.segments)
     }
 }

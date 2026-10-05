@@ -50,3 +50,11 @@ fn extract_features_helper_matches_default_extractor() {
         assert!((a - b).abs() < 1e-6, "got {a} expected {b}");
     }
 }
+
+#[test]
+fn log_mel_rejects_audio_too_short_to_pad() {
+    let fe = whisper_burn::features::mel::FeatureExtractor::new(80, 16_000).unwrap();
+    assert!(fe.log_mel(&[0.1; 200]).is_err());
+    assert!(fe.log_mel(&[]).is_err());
+    assert!(fe.log_mel(&[0.1; 320]).is_ok());
+}

@@ -85,6 +85,23 @@ enum Cmd {
         #[arg(long, value_enum, default_value = "f16")]
         precision: Precision,
     },
+    /// Developer tool: measure short-window decoding against the 30 s decode.
+    #[command(hide = true)]
+    StreamSweep {
+        path: PathBuf,
+        #[arg(long)]
+        model_dir: PathBuf,
+        #[arg(long, default_value = "he")]
+        language: String,
+        /// Window lengths in seconds, comma separated.
+        #[arg(long, value_delimiter = ',', default_value = "1,2,3,5,10")]
+        windows: Vec<f32>,
+        #[arg(long, value_enum, default_value = "f16")]
+        precision: Precision,
+        /// Zero-pad each window to 30 s before encoding.
+        #[arg(long)]
+        pad: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -99,6 +116,20 @@ fn main() -> ExitCode {
         Some(Cmd::Settings) => report(dictation_service::settings::run()),
         Some(Cmd::PasteTest { text }) => report(paste_test(&text)),
         Some(Cmd::RecordTest { secs, device }) => match record_test(secs, device) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Some(Cmd::StreamSweep {
+            path,
+            model_dir,
+            language,
+            windows,
+            precision,
+            pad,
+        }) => match stream_sweep(&path, &model_dir, &language, &windows, precision, pad) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -340,4 +371,56 @@ fn start_hotkey(chord: Chord, label: &str, tx: std::sync::mpsc::Sender<RuntimeMs
         Ok(()) => eprintln!("hotkey {label} active via {name}"),
         Err(e) => eprintln!("hotkey unavailable ({e}); use `dictation start`/`stop`"),
     }
+}
+
+fn stream_sweep(
+    path: &Path,
+    model_dir: &Path,
+    language: &str,
+    windows: &[f32],
+    precision: Precision,
+    pad: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use dictation_service::engine::join_segments;
+    use dictation_service::metrics::char_error_rate;
+
+    let (pcm, rate) = decode_to_mono_f32(path)?;
+    let pcm16 = if rate == 16_000 {
+        pcm
+    } else {
+        whisper_burn::audio::resample::resample_to_16k(&pcm, rate, 16_000)?
+    };
+    let precision = Engine::resolve_precision(precision);
+    let engine = Engine::load_on(
+        parse_model("ivrit-turbo").ok_or("model")?,
+        model_dir,
+        default_device(),
+        precision,
+    )?;
+    println!("backend={} audio_s={:.1}", engine.backend_name(), pcm16.len() as f64 / 16_000.0);
+
+    // Warm up so the first window length is not penalised by shader compilation.
+    engine.transcribe_windows(&pcm16[..16_000.min(pcm16.len())], 16_000, Some(language), Some(16_000), pad)?;
+
+    let t = Instant::now();
+    let reference = join_segments(&engine.transcribe_windows(&pcm16, 16_000, Some(language), None, false)?);
+    println!("full30 elapsed_ms={}", t.elapsed().as_millis());
+    println!("REF: {reference}");
+
+    println!("window_s | windows | ms/window | CER vs full");
+    for &secs in windows {
+        let w = ((secs * 16_000.0) as usize / 320).max(1) * 320;
+        let t = Instant::now();
+        let segs = engine.transcribe_windows(&pcm16, 16_000, Some(language), Some(w), pad)?;
+        let ms = t.elapsed().as_millis();
+        let n = pcm16.len().div_ceil(w);
+        let text = join_segments(&segs);
+        println!(
+            "{secs:>8} | {n:>7} | {:>9} | {:.3}",
+            ms / n as u128,
+            char_error_rate(&reference, &text)
+        );
+        println!("  {text}");
+    }
+    Ok(())
 }
