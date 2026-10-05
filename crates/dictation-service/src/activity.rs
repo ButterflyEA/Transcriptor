@@ -54,3 +54,19 @@ pub fn plan_sync(typed: &str, target: &str, locked: bool) -> (usize, String) {
     }
     (extra, target.chars().skip(common).collect())
 }
+
+/// Appends a line to %TEMP%\dictation-debug.log when DICTATION_DEBUG is set.
+pub fn debug(line: &str) {
+    if std::env::var_os("DICTATION_DEBUG").is_none() {
+        return;
+    }
+    use std::io::Write;
+    let path = std::env::temp_dir().join("dictation-debug.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(f, "{} {line}", now_ms());
+    }
+}

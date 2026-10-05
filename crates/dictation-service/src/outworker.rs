@@ -43,6 +43,7 @@ impl OutWorker {
                         },
                         Job::Type(text) => {
                             activity::begin_typing();
+                            activity::debug(&format!("OUT type {text:?}"));
                             if let Err(e) = typer.type_text(&text) {
                                 notify(e);
                             }
@@ -50,6 +51,7 @@ impl OutWorker {
                         }
                         Job::Backspace(n) => {
                             activity::begin_typing();
+                            activity::debug(&format!("OUT backspace {n}"));
                             if let Err(e) = typer.backspace(n) {
                                 notify(e);
                             }

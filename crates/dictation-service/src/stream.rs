@@ -43,8 +43,16 @@ impl WindowDecoder for EngineDecoder<'_> {
                 self.window_samples,
                 cancelled,
             )
+            .map(strip_bidi_marks)
             .map_err(|e| e.to_string())
     }
+}
+
+/// The model sometimes emits invisible direction marks; they would be typed into the document.
+fn strip_bidi_marks(text: String) -> String {
+    text.chars()
+        .filter(|c| !matches!(c, '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'))
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq)]

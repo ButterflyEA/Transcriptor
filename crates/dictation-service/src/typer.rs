@@ -1,8 +1,11 @@
 //! Types text and backspaces into the focused window, for streaming dictation.
+#[cfg(not(windows))]
 use std::process::Command;
 
+#[cfg(not(windows))]
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
+#[cfg(not(windows))]
 use crate::output::is_wayland;
 
 pub trait Typer: Send {
@@ -35,6 +38,9 @@ impl Typer for NullTyper {
 }
 
 pub fn system_typer() -> Box<dyn Typer> {
+    #[cfg(windows)]
+    return Box::new(WinTyper);
+    #[cfg(not(windows))]
     if is_wayland() {
         Box::new(WtypeTyper)
     } else {
@@ -42,15 +48,18 @@ pub fn system_typer() -> Box<dyn Typer> {
     }
 }
 
-/// Windows (SendInput with Unicode) and X11, through enigo.
+/// X11, through enigo.
+#[cfg(not(windows))]
 struct EnigoTyper;
 
+#[cfg(not(windows))]
 impl EnigoTyper {
     fn enigo() -> Result<Enigo, String> {
         Enigo::new(&Settings::default()).map_err(|e| format!("keyboard unavailable: {e}"))
     }
 }
 
+#[cfg(not(windows))]
 impl Typer for EnigoTyper {
     fn type_text(&mut self, s: &str) -> Result<(), String> {
         Self::enigo()?
@@ -73,8 +82,10 @@ impl Typer for EnigoTyper {
 }
 
 /// Wayland: `wtype` types text, but corrections are off until evdev is active.
+#[cfg(not(windows))]
 struct WtypeTyper;
 
+#[cfg(not(windows))]
 impl Typer for WtypeTyper {
     fn type_text(&mut self, s: &str) -> Result<(), String> {
         let status = Command::new("wtype")
@@ -94,5 +105,82 @@ impl Typer for WtypeTyper {
 
     fn supports_backspace(&self) -> bool {
         false
+    }
+}
+
+/// Windows: one SendInput batch per call, so the characters arrive in order
+/// and no key can be left held down.
+#[cfg(windows)]
+struct WinTyper;
+
+#[cfg(windows)]
+fn send_keys(
+    inputs: &[windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT],
+) -> Result<(), String> {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{INPUT, SendInput};
+    for chunk in inputs.chunks(64) {
+        // SAFETY: chunk is a valid slice of INPUT structs and the size matches.
+        let sent = unsafe {
+            SendInput(
+                chunk.len() as u32,
+                chunk.as_ptr(),
+                std::mem::size_of::<INPUT>() as i32,
+            )
+        };
+        if sent as usize != chunk.len() {
+            return Err("typing was blocked by the target window".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn key_input(
+    vk: u16,
+    scan: u16,
+    flags: u32,
+) -> windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+    };
+    INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: scan,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
+#[cfg(windows)]
+impl Typer for WinTyper {
+    fn type_text(&mut self, s: &str) -> Result<(), String> {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_KEYUP, KEYEVENTF_UNICODE};
+        let mut inputs = Vec::new();
+        for unit in s.encode_utf16() {
+            inputs.push(key_input(0, unit, KEYEVENTF_UNICODE));
+            inputs.push(key_input(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP));
+        }
+        send_keys(&inputs)
+    }
+
+    fn backspace(&mut self, n: usize) -> Result<(), String> {
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_KEYUP, VK_BACK};
+        let mut inputs = Vec::new();
+        for _ in 0..n {
+            inputs.push(key_input(VK_BACK, 0, 0));
+            inputs.push(key_input(VK_BACK, 0, KEYEVENTF_KEYUP));
+        }
+        send_keys(&inputs)
+    }
+
+    fn supports_backspace(&self) -> bool {
+        true
     }
 }

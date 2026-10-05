@@ -34,6 +34,9 @@ eframe = "0.29"
 thiserror.workspace = true
 sha2 = "0.10"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 evdev = { version = "0.13", optional = true }
 

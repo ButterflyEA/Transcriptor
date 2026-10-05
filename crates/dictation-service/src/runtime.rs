@@ -395,6 +395,7 @@ impl LiveText {
     }
 
     fn apply(&mut self, out: &OutWorker, edit: Edit, notify: &dyn Fn(String)) {
+        activity::debug(&format!("edit {edit:?}"));
         match edit {
             Edit::Append(t) => self.model.push_str(&t),
             Edit::Replace { backspaces, text } => {
@@ -424,6 +425,10 @@ impl LiveText {
             self.warned = true;
             notify("You used the keyboard or mouse, so corrections stopped. The final text is on the clipboard.".into());
         }
+        activity::debug(&format!(
+            "type bs={backspaces} text={text:?} locked={} typed={:?}",
+            self.locked, self.typed
+        ));
         if backspaces > 0 {
             for _ in 0..backspaces {
                 self.typed.pop();
