@@ -22,6 +22,16 @@ pub fn parse_model(name: &str) -> Option<ModelSize> {
     }
 }
 
+/// Float precision of the GPU model. f16 halves VRAM and is faster; the
+/// service falls back to f32 when the GPU lacks f16 support.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum Precision {
+    #[default]
+    F16,
+    F32,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -29,6 +39,7 @@ pub struct Config {
     pub model: String,
     pub model_dir: Option<PathBuf>,
     pub language: String,
+    pub precision: Precision,
     pub input_device: Option<String>,
     pub paste_delay_ms: u64,
     pub max_record_secs: u32,
@@ -42,6 +53,7 @@ impl Default for Config {
             model: "ivrit-turbo".into(),
             model_dir: None,
             language: "he".into(),
+            precision: Precision::F16,
             input_device: None,
             paste_delay_ms: 50,
             max_record_secs: 120,

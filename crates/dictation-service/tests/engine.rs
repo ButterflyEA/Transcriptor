@@ -106,8 +106,11 @@ fn missing_everywhere_is_none() {
 #[test]
 fn loading_a_missing_model_errors_without_network() {
     let missing = Path::new("definitely-not-a-real-model-dir");
-    let err =
-        dictation_service::engine::Engine::load(whisper_burn::ModelSize::LargeV3Turbo, missing);
+    let err = dictation_service::engine::Engine::load(
+        whisper_burn::ModelSize::LargeV3Turbo,
+        missing,
+        Default::default(),
+    );
     assert!(err.is_err());
 }
 
@@ -115,9 +118,12 @@ fn loading_a_missing_model_errors_without_network() {
 #[ignore = "needs the model files in DICTATION_MODEL_DIR"]
 fn transcribes_silence_without_hallucinating() {
     let dir = PathBuf::from(std::env::var("DICTATION_MODEL_DIR").unwrap());
-    let engine =
-        dictation_service::engine::Engine::load(whisper_burn::ModelSize::LargeV3Turbo, &dir)
-            .unwrap();
+    let engine = dictation_service::engine::Engine::load(
+        whisper_burn::ModelSize::LargeV3Turbo,
+        &dir,
+        Default::default(),
+    )
+    .unwrap();
     let pcm = vec![0.0f32; 16_000 * 2];
     let text = engine.transcribe_pcm(&pcm, 16_000, Some("he")).unwrap();
     assert!(text.len() < 40, "silence hallucinated: {text:?}");

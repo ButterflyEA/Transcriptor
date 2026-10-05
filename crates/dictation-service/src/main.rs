@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use dictation_service::audio::{CpalRecorder, Recorder};
 use dictation_service::checksum::FileCheck;
 use dictation_service::chord::{Chord, HotkeyEvent};
-use dictation_service::config::{self, Config, parse_model};
+use dictation_service::config::{self, Config, Precision, parse_model};
 use dictation_service::control::{self, Command};
 use dictation_service::controller::Input;
 use dictation_service::engine::Engine;
@@ -82,6 +82,8 @@ enum Cmd {
         /// Transcribe this many times to separate warm-up from steady state.
         #[arg(long, default_value_t = 1)]
         repeat: u32,
+        #[arg(long, value_enum, default_value = "f16")]
+        precision: Precision,
     },
 }
 
@@ -110,7 +112,10 @@ fn main() -> ExitCode {
             language,
             device,
             repeat,
-        }) => match transcribe_file(&path, &model_dir, &model, language, device, repeat) {
+            precision,
+        }) => match transcribe_file(
+            &path, &model_dir, &model, language, device, repeat, precision,
+        ) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("error: {e}");
@@ -172,16 +177,21 @@ fn transcribe_file(
     language: Option<String>,
     device: Device,
     repeat: u32,
+    precision: Precision,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let size = parse_model(model).ok_or("unknown model")?;
     let (pcm, rate) = decode_to_mono_f32(path)?;
+    let mut precision = precision;
     let choice = match device {
-        Device::Auto => default_device(),
+        Device::Auto => {
+            precision = Engine::resolve_precision(precision);
+            default_device()
+        }
         Device::Cpu => BackendChoice::Cpu(cpu_device()),
     };
 
     let t = Instant::now();
-    let engine = Engine::load_on(size, model_dir, choice)?;
+    let engine = Engine::load_on(size, model_dir, choice, precision)?;
     println!(
         "backend={} load_ms={}",
         engine.backend_name(),

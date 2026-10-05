@@ -293,6 +293,7 @@ pub fn beam_search<B: Backend>(
                     .slice([sot_index..sot_index + 1, 0..n_vocab])
                     .reshape([n_vocab])
                     .into_data()
+                    .convert::<f32>()
                     .to_vec::<f32>()
                     .map_err(|e| Error::Decoder(format!("reading sot logits: {e}")))?;
                 no_speech_prob = log_softmax_row(&sot_row)[sid.nospeech as usize].exp();
@@ -302,6 +303,7 @@ pub fn beam_search<B: Backend>(
                 .slice([beam.tokens.len() - 1..beam.tokens.len(), 0..n_vocab])
                 .reshape([n_vocab])
                 .into_data()
+                .convert::<f32>()
                 .to_vec::<f32>()
                 .map_err(|e| Error::Decoder(format!("reading logits: {e}")))?;
 

@@ -77,6 +77,7 @@ pub fn detect_language<B: Backend>(
     let row = logits
         .reshape([whisper.dims.n_vocab])
         .into_data()
+        .convert::<f32>()
         .to_vec::<f32>()
         .map_err(|e| Error::Decoder(format!("reading language logits: {e}")))?;
 

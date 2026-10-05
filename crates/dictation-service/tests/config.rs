@@ -1,4 +1,4 @@
-use dictation_service::config::{Config, parse_model};
+use dictation_service::config::{Config, Precision, parse_model};
 use whisper_burn::ModelSize;
 
 #[test]
@@ -98,4 +98,11 @@ fn model_names_resolve() {
     assert_eq!(parse_model("ivrit-turbo"), Some(ModelSize::LargeV3Turbo));
     assert_eq!(parse_model("tiny"), Some(ModelSize::Tiny));
     assert_eq!(parse_model("nope"), None);
+}
+
+#[test]
+fn precision_defaults_to_f16_and_parses_from_toml() {
+    assert_eq!(Config::default().precision, Precision::F16);
+    let c: Config = toml::from_str("precision = \"f32\"").unwrap();
+    assert_eq!(c.precision, Precision::F32);
 }

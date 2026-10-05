@@ -85,9 +85,15 @@ feature of `whisper-burn` is not used by the service.
 `model.safetensors` ~3.2 GB, same architecture as `LargeV3Turbo`). The
 existing `IvritHebrew` variant (ivrit-ai/whisper-large-v3, ~6.2 GB resident)
 does not fit. `whisper-burn` computes in f32 (~3.3 GB floor before
-activations), which is very tight on 4 GB. A **spike (Sprint 1)** measures real
-VRAM for f32 and f16 and decides: f32 as-is, f16 compute in `whisper-burn`, or a
-fallback to a smaller model. The default model is fixed only after the spike.
+activations), which is very tight on 4 GB.
+
+**Decision (v1.0.1): f16 compute is the default.** Measured on an RTX 5060 Ti
+with the 22 s Hebrew clip: f32 peaks at about 4.0 GB VRAM, f16 at about 2.3 GB,
+with identical transcript and about 20% lower latency (6.5 s to 4.8-5.5 s). The
+config key `precision = "f16" | "f32"` selects it (restart to apply). It is set
+as the burn device default dtype before the first tensor is created, and falls
+back to f32 when the adapter lacks f16. Weights stay f32 on disk (about 3.2 GB);
+an f16 weights file is a separate packaging option.
 Other models can still be placed in `model_dir` and selected in settings.
 
 ## Error handling

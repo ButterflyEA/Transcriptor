@@ -99,7 +99,7 @@ fn load_engine(config: &Config) -> Result<Engine, String> {
     let size =
         parse_model(&config.model).ok_or_else(|| format!("unknown model {:?}", config.model))?;
     let dir = model_search_paths(config)?;
-    Engine::load(size, &dir).map_err(|e| e.to_string())
+    Engine::load(size, &dir, config.precision).map_err(|e| e.to_string())
 }
 
 fn engine_thread(config: Config, jobs: mpsc::Receiver<Job>, tx: Sender<RuntimeMsg>) {

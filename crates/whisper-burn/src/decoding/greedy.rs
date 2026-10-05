@@ -168,6 +168,7 @@ pub fn greedy_search<B: Backend>(
                 .slice([sot_index..sot_index + 1, 0..n_vocab])
                 .reshape([n_vocab])
                 .into_data()
+                .convert::<f32>()
                 .to_vec::<f32>()
                 .map_err(|e| Error::Decoder(format!("reading sot logits: {e}")))?;
             no_speech_prob = softmax(&row)[sid.nospeech as usize];
@@ -177,6 +178,7 @@ pub fn greedy_search<B: Backend>(
             .slice([tokens.len() - 1..tokens.len(), 0..n_vocab])
             .reshape([n_vocab])
             .into_data()
+            .convert::<f32>()
             .to_vec::<f32>()
             .map_err(|e| Error::Decoder(format!("reading logits: {e}")))?;
 

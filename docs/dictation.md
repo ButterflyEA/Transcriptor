@@ -36,6 +36,7 @@ All fields are optional.
 | `model` | `"ivrit-turbo"` | `ivrit-turbo` or a stock size such as `tiny`, `large-v3-turbo` (needs its own folder) |
 | `model_dir` | unset | folder with `config.json` and `model.safetensors` for `model` |
 | `language` | `"he"` | `auto` or a 2-letter lowercase code |
+| `precision` | `"f16"` | `f16` (about 2.3 GB VRAM, faster) or `f32` (about 4 GB VRAM); restart to apply. f16 falls back to f32 when the GPU does not support it |
 | `input_device` | unset (system default) | input device name; restart to apply |
 | `paste_delay_ms` | `50` | wait between setting the clipboard and pasting; restart to apply |
 | `max_record_secs` | `120` | a recording is stopped automatically after this long; restart to apply |
@@ -153,5 +154,5 @@ Record results per release. Items marked (unverified) have not been run yet.
 - [ ] Taps under 300 ms do nothing; silence pastes nothing
 - [ ] Unplug the mic mid-recording: notification, next press works
 - [ ] Dictating Hebrew with `language = "he"`
-- [ ] Peak VRAM and idle RAM with the bundled model (spike: about 4.0 GB VRAM peak in f32, see the plan's Task 1.3 decision)
+- [ ] Peak VRAM and idle RAM with the bundled model (spike: about 4.0 GB VRAM peak in f32, 2.3 GB in f16, which is the default)
 - [ ] Airgap: networking disabled, cold start, dictate Hebrew; firewall log shows no outbound connections from `dictation`
