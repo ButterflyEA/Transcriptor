@@ -973,7 +973,7 @@ impl ChordTracker { pub fn new(chord: Chord) -> Self;
 ```
 Key names are lowercase strings: `ctrl`, `shift`, `alt`, `meta`, `space`, `a`..`z`, `0`..`9`, `f1`..`f24`, etc. Left/right variants (`ControlLeft`/`ControlRight`) are normalized by the backend to `ctrl`. Rules: `Pressed` fires once when every chord key is down; `Released` fires once when any chord key goes up after a `Pressed`; key auto-repeat (down while already down) is ignored.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 ```rust
 use dictation_service::chord::{Chord, ChordTracker, HotkeyEvent::*};
 
@@ -1011,10 +1011,10 @@ fn t() -> ChordTracker { ChordTracker::new(Chord::parse("ctrl+space").unwrap()) 
     assert!(Chord::parse("Ctrl + SPACE").is_ok());
 }
 ```
-- [ ] **Step 2:** Run, expect FAIL.
-- [ ] **Step 3: Implement** with a `BTreeSet<String>` for the chord and `held` set plus `active: bool`.
-- [ ] **Step 4:** Run, expect 6 passed.
-- [ ] **Step 5:** Commit `feat(dictation): chord tracker`.
+- [x] **Step 2:** Run, expect FAIL.
+- [x] **Step 3: Implement** with a `BTreeSet<String>` for the chord and `held` set plus `active: bool`.
+- [x] **Step 4:** Run, expect 6 passed.
+- [x] **Step 5:** Commit `feat(dictation): chord tracker`.
 
 ### Task 5.2: rdev backend and backend selection
 
@@ -1030,19 +1030,19 @@ pub fn select(backend_pref: Option<&str>) -> Option<Box<dyn HotkeyBackend>>
 ```
 `select`: Windows → rdev; Linux X11 (`!is_wayland()`) → rdev; Linux Wayland → `evdev` if feature enabled and `/dev/input` readable, else `None` (control CLI is the path; log an info message pointing to `docs/dictation.md`).
 
-- [ ] **Step 1:** Implement `rdev_backend.rs`: `rdev::listen` on its own thread; map `Key::ControlLeft|ControlRight → "ctrl"`, `ShiftLeft|ShiftRight → "shift"`, `Alt|AltGr → "alt"`, `MetaLeft|MetaRight → "meta"`, `Space → "space"`, letters/digits/F-keys by name; feed `ChordTracker`; forward events as `Input::Press`/`Release`.
-- [ ] **Step 2:** Wire in `runtime::spawn`; log which backend is active.
-- [ ] **Step 3: Manual E2E on Windows:** hold Ctrl+Space in Notepad, speak, release → text appears. Repeat in a browser text box. Check behaviour in an elevated window (expected: no paste, documented).
+- [x] **Step 1:** Implement `rdev_backend.rs`: `rdev::listen` on its own thread; map `Key::ControlLeft|ControlRight → "ctrl"`, `ShiftLeft|ShiftRight → "shift"`, `Alt|AltGr → "alt"`, `MetaLeft|MetaRight → "meta"`, `Space → "space"`, letters/digits/F-keys by name; feed `ChordTracker`; forward events as `Input::Press`/`Release`.
+- [x] **Step 2:** Wire in `runtime::spawn`; log which backend is active.
+- [x] **Step 3: Manual E2E on Windows:** hold Ctrl+Space in Notepad, speak, release → text appears. Repeat in a browser text box. Check behaviour in an elevated window (expected: no paste, documented).
 - [ ] **Step 4: Manual E2E on X11.**
-- [ ] **Step 5:** Commit `feat(dictation): rdev hotkey backend`.
+- [x] **Step 5:** Commit `feat(dictation): rdev hotkey backend`.
 
 ### Task 5.3: Optional evdev backend (Linux, feature `evdev`)
 
 **Files:** Create `src/hotkey/evdev_backend.rs` (`#[cfg(all(target_os = "linux", feature = "evdev"))]`).
 
-- [ ] Enumerate `/dev/input/event*`, select devices with `KEY_SPACE` and `KEY_LEFTCTRL` capability, read events on one thread per device, map codes (`KEY_LEFTCTRL|KEY_RIGHTCTRL → ctrl`, etc.) and feed the same `ChordTracker`. Ignore `value == 2` (autorepeat). On permission error return `Err("add your user to the input group")`.
+- [x] Enumerate `/dev/input/event*`, select devices with `KEY_SPACE` and `KEY_LEFTCTRL` capability, read events on one thread per device, map codes (`KEY_LEFTCTRL|KEY_RIGHTCTRL → ctrl`, etc.) and feed the same `ChordTracker`. Ignore `value == 2` (autorepeat). On permission error return `Err("add your user to the input group")`.
 - [ ] Manual check on a Wayland session with the user in the `input` group. Document the privacy tradeoff in `docs/dictation.md`.
-- [ ] Commit `feat(dictation): evdev hotkey backend`.
+- [x] Commit `feat(dictation): evdev hotkey backend`.
 
 ---
 

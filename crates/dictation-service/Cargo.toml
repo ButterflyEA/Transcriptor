@@ -26,6 +26,7 @@ cpal = "0.15"
 arboard = "3"
 enigo = "0.3"
 interprocess = "2"
+rdev = "0.5"
 thiserror.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]

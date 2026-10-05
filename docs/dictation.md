@@ -4,6 +4,24 @@ Push-to-talk dictation for Hebrew (and other languages) that runs fully offline.
 Hold a key, speak, release: the text is pasted into the focused field and also
 left on the clipboard.
 
+## Hotkey
+
+The default hotkey is **Ctrl+Space**, push-to-talk: hold to record, release to
+transcribe and paste. Change it with `hotkey` in `config.toml` (for example
+`hotkey = "ctrl+shift+space"`); restart the service to apply it. Key names are
+lowercase: `ctrl`, `shift`, `alt`, `meta`, `space`, `a`-`z`, `0`-`9`, `f1`-`f12`.
+A press during transcription is queued.
+
+- **Windows and Linux/X11:** a global listener (rdev) handles the hotkey. The
+  keys are observed, not swallowed, so the focused app still receives Ctrl+Space
+  as well. Pick a different chord if that bothers you. Windows does not deliver
+  keys typed into elevated (administrator) windows to a normal process, so the
+  hotkey does nothing there.
+- **Linux/Wayland:** apps cannot listen for global keys, so use the compositor
+  binds below. Optionally build with `--features evdev` to read `/dev/input`
+  directly; this needs your user in the `input` group and lets the process see
+  all keystrokes, so it is off by default.
+
 ## Controlling a running service
 
 `dictation run` starts the service (foreground). It listens on a local socket

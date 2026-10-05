@@ -4,10 +4,12 @@ use std::time::Instant;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use dictation_service::audio::{CpalRecorder, Recorder};
+use dictation_service::chord::{Chord, HotkeyEvent};
 use dictation_service::config::{self, Config, parse_model};
 use dictation_service::control::{self, Command};
 use dictation_service::controller::Input;
 use dictation_service::engine::Engine;
+use dictation_service::hotkey;
 use dictation_service::output::{PasteOutcome, system_paster};
 use dictation_service::runtime::{RuntimeMsg, spawn};
 use whisper_burn::audio::decode::decode_to_mono_f32;
@@ -194,11 +196,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let config: Config = Config::load_from(&config::default_path())?;
     config.validate()?;
+    let hotkey_label = config.hotkey.clone();
+    let chord = Chord::parse(&hotkey_label)?;
     let rt = spawn(
         config,
         Box::new(|s| eprintln!("status: {s:?}")),
         Box::new(|m| eprintln!("notice: {m}")),
     );
+    start_hotkey(chord, &hotkey_label, rt.tx.clone());
     let tx = rt.tx.clone();
     let status = rt.status_handle();
     control::serve(move |cmd| match cmd {
@@ -227,5 +232,31 @@ fn send_input(tx: &std::sync::mpsc::Sender<RuntimeMsg>, input: Input) -> String 
     match tx.send(RuntimeMsg::Input(input)) {
         Ok(()) => "ok".into(),
         Err(_) => "error: service is shutting down".into(),
+    }
+}
+
+/// Global hotkey: hold to record, release to transcribe. Failure is not fatal,
+/// since `dictation start/stop` still works.
+fn start_hotkey(chord: Chord, label: &str, tx: std::sync::mpsc::Sender<RuntimeMsg>) {
+    let Some(backend) = hotkey::select() else {
+        eprintln!(
+            "no global hotkey backend on this session; bind `dictation start`/`stop` in your compositor (see docs/dictation.md)"
+        );
+        return;
+    };
+    let name = backend.name();
+    let result = backend.spawn(
+        chord,
+        Box::new(move |e| {
+            let input = match e {
+                HotkeyEvent::Pressed => Input::Press,
+                HotkeyEvent::Released => Input::Release,
+            };
+            let _ = tx.send(RuntimeMsg::Input(input));
+        }),
+    );
+    match result {
+        Ok(()) => eprintln!("hotkey {label} active via {name}"),
+        Err(e) => eprintln!("hotkey unavailable ({e}); use `dictation start`/`stop`"),
     }
 }
