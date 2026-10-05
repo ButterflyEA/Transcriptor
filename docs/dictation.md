@@ -10,9 +10,10 @@ Build: `cargo build --release -p dictation-service` (binary: `target/release/dic
 Linux build needs ALSA headers (`libasound2-dev`), `pkg-config`, and for the tray
 GTK 3 and libayatana-appindicator.
 
-Release bundles include the Hebrew model and need no network at install or run
-time; see [packaging/README.md](../packaging/README.md). On Windows unzip the
-bundle and run `.\install.ps1`. The service looks for the model in this order:
+Release installers include the Hebrew model and need no network at install or run
+time; see [packaging/README.md](../packaging/README.md). On Windows run the
+setup wizard (`dictation-setup-<version>.exe`, kept next to its `.bin` files); it
+also registers the app and can start it at sign-in. The service looks for the model in this order:
 `model_dir` from the config, `models/<model>` next to the executable,
 `<data dir>/dictation/models/<model>`, then on Linux
 `/usr/share/dictation/models/<model>`. Nothing is ever downloaded.
