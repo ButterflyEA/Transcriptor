@@ -86,7 +86,12 @@ fn model_search_paths(config: &Config) -> Result<PathBuf, String> {
                     .to_string()),
             exe_dir.join("models").join(&config.model).display(),
             data_dir.join("models").join(&config.model).display(),
-        )
+        ) + if cfg!(target_os = "linux") {
+            format!(" and /usr/share/dictation/models/{}", config.model)
+        } else {
+            String::new()
+        }
+        .as_str()
     })
 }
 

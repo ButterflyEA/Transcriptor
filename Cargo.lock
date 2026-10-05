@@ -3341,6 +3341,7 @@ dependencies = [
  "notify-rust",
  "rdev",
  "serde",
+ "sha2",
  "tao 0.30.8",
  "thiserror 2.0.21",
  "toml 0.8.2",

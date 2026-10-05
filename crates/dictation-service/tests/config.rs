@@ -7,11 +7,16 @@ fn defaults_are_valid_and_match_spec() {
     assert_eq!(c.hotkey, "ctrl+space");
     assert_eq!(c.model, "ivrit-turbo");
     assert_eq!(c.model_dir, None);
-    assert_eq!(c.language, "auto");
+    assert_eq!(c.language, "he");
     assert_eq!(c.queue_cap, 3);
     assert_eq!(c.max_record_secs, 120);
     assert!(c.validate().is_ok());
-    assert_eq!(c.language_option(), None);
+    assert_eq!(c.language_option().as_deref(), Some("he"));
+    let auto = Config {
+        language: "auto".into(),
+        ..Config::default()
+    };
+    assert_eq!(auto.language_option(), None);
 }
 
 #[test]

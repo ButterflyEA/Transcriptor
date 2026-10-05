@@ -4,6 +4,7 @@ use std::thread;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, SizedSample};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const MIN_RECORDING_MS: u64 = 300;
 
@@ -92,6 +93,8 @@ struct Active {
     _stream: cpal::Stream,
     buf: Arc<Mutex<Vec<f32>>>,
     rate: u32,
+    /// Set by the stream error callback, e.g. when the microphone is unplugged.
+    lost: Arc<AtomicBool>,
 }
 
 fn worker(rx: Receiver<Msg>, device_name: Option<String>, max_secs: u32) {
@@ -108,6 +111,9 @@ fn worker(rx: Receiver<Msg>, device_name: Option<String>, max_secs: u32) {
             Msg::Stop(reply) => {
                 let result = match active.take() {
                     None => Err("not recording".to_string()),
+                    Some(a) if a.lost.load(Ordering::SeqCst) => {
+                        Err("microphone disconnected during recording".to_string())
+                    }
                     Some(a) => {
                         drop(a._stream);
                         let samples = std::mem::take(&mut *a.buf.lock().unwrap());
@@ -146,12 +152,13 @@ fn open(name: Option<&str>, max_secs: u32) -> Result<Active, String> {
     let channels = supported.channels();
     let max = rate as usize * max_secs as usize;
     let buf = Arc::new(Mutex::new(Vec::new()));
+    let lost = Arc::new(AtomicBool::new(false));
     let config = supported.config();
 
     let stream = match supported.sample_format() {
-        SampleFormat::F32 => build::<f32>(&device, &config, channels, max, &buf),
-        SampleFormat::I16 => build::<i16>(&device, &config, channels, max, &buf),
-        SampleFormat::U16 => build::<u16>(&device, &config, channels, max, &buf),
+        SampleFormat::F32 => build::<f32>(&device, &config, channels, max, &buf, &lost),
+        SampleFormat::I16 => build::<i16>(&device, &config, channels, max, &buf, &lost),
+        SampleFormat::U16 => build::<u16>(&device, &config, channels, max, &buf, &lost),
         other => Err(format!("unsupported sample format {other:?}")),
     }?;
     stream.play().map_err(|e| format!("start stream: {e}"))?;
@@ -159,6 +166,7 @@ fn open(name: Option<&str>, max_secs: u32) -> Result<Active, String> {
         _stream: stream,
         buf,
         rate,
+        lost,
     })
 }
 
@@ -168,12 +176,14 @@ fn build<T>(
     channels: u16,
     max: usize,
     buf: &Arc<Mutex<Vec<f32>>>,
+    lost: &Arc<AtomicBool>,
 ) -> Result<cpal::Stream, String>
 where
     T: SizedSample,
     f32: cpal::FromSample<T>,
 {
     let buf = Arc::clone(buf);
+    let lost = Arc::clone(lost);
     device
         .build_input_stream(
             config,
@@ -182,7 +192,10 @@ where
                 let mono = downmix_to_mono(&floats, channels);
                 push_capped(&mut buf.lock().unwrap(), &mono, max);
             },
-            |e| log::error!("audio stream error: {e}"),
+            move |e| {
+                log::error!("audio stream error: {e}");
+                lost.store(true, Ordering::SeqCst);
+            },
             None,
         )
         .map_err(|e| format!("open input stream: {e}"))

@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use dictation_service::audio::{CpalRecorder, Recorder};
+use dictation_service::checksum::FileCheck;
 use dictation_service::chord::{Chord, HotkeyEvent};
 use dictation_service::config::{self, Config, parse_model};
 use dictation_service::control::{self, Command};
@@ -49,6 +50,12 @@ enum Cmd {
     Reload,
     /// Open the settings window.
     Settings,
+    /// Check the model files against SHA256SUMS (for transfers into airgapped networks).
+    #[command(hide = true)]
+    VerifyModel {
+        /// Model folder; defaults to the folder the service would use.
+        dir: Option<PathBuf>,
+    },
     /// Developer tool: copy text to the clipboard and paste it after 3 seconds.
     #[command(hide = true)]
     PasteTest { text: String },
@@ -86,6 +93,7 @@ fn main() -> ExitCode {
         Some(Cmd::Toggle) => control_cmd(Command::Toggle),
         Some(Cmd::Status) => control_cmd(Command::Status),
         Some(Cmd::Reload) => control_cmd(Command::Reload),
+        Some(Cmd::VerifyModel { dir }) => verify_model(dir),
         Some(Cmd::Settings) => report(dictation_service::settings::run()),
         Some(Cmd::PasteTest { text }) => report(paste_test(&text)),
         Some(Cmd::RecordTest { secs, device }) => match record_test(secs, device) {
@@ -109,6 +117,51 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+    }
+}
+
+fn verify_model(dir: Option<PathBuf>) -> ExitCode {
+    let dir = dir.unwrap_or_else(|| {
+        let cfg = Config::load_from(&config::default_path()).unwrap_or_default();
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(PathBuf::from))
+            .unwrap_or_default();
+        let data_dir = dirs::data_dir().unwrap_or_default().join("dictation");
+        dictation_service::engine::resolve_model_dir(
+            &cfg.model,
+            cfg.model_dir.as_deref(),
+            &exe_dir,
+            &data_dir,
+        )
+        .unwrap_or_else(|| exe_dir.join("models").join(&cfg.model))
+    });
+    match dictation_service::checksum::verify_dir(&dir) {
+        Err(e) => {
+            eprintln!("error: {e}");
+            ExitCode::FAILURE
+        }
+        Ok(results) => {
+            let mut all_ok = true;
+            for (name, check) in &results {
+                match check {
+                    FileCheck::Ok => println!("OK        {name}"),
+                    FileCheck::Missing => {
+                        all_ok = false;
+                        println!("MISSING   {name}");
+                    }
+                    FileCheck::Mismatch { actual } => {
+                        all_ok = false;
+                        println!("MISMATCH  {name} (got {actual})");
+                    }
+                }
+            }
+            if all_ok {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
     }
 }
 

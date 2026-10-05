@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod checksum;
 pub mod chord;
 pub mod config;
 pub mod control;

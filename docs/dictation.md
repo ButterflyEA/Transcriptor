@@ -4,6 +4,44 @@ Push-to-talk dictation for Hebrew (and other languages) that runs fully offline.
 Hold a key, speak, release: the text is pasted into the focused field and also
 left on the clipboard.
 
+## Install and build
+
+Build: `cargo build --release -p dictation-service` (binary: `target/release/dictation`).
+Linux build needs ALSA headers (`libasound2-dev`), `pkg-config`, and for the tray
+GTK 3 and libayatana-appindicator.
+
+Release bundles include the Hebrew model and need no network at install or run
+time; see [packaging/README.md](../packaging/README.md). On Windows unzip the
+bundle and run `.\install.ps1`. The service looks for the model in this order:
+`model_dir` from the config, `models/<model>` next to the executable,
+`<data dir>/dictation/models/<model>`, then on Linux
+`/usr/share/dictation/models/<model>`. Nothing is ever downloaded.
+
+`dictation verify-model [folder]` checks the model files against `SHA256SUMS`,
+which is how IT can confirm a transfer into an airgapped network arrived intact.
+
+The bundled model is [ivrit-ai/whisper-large-v3-turbo](https://huggingface.co/ivrit-ai/whisper-large-v3-turbo)
+(Apache-2.0, see [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)). It is
+Hebrew-focused with degraded language detection, so `language` defaults to `he`.
+
+## Configuration
+
+File: Windows `%APPDATA%\dictation\config.toml`, Linux `~/.config/dictation/config.toml`.
+All fields are optional.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `hotkey` | `"ctrl+space"` | chord joined with `+`; restart to apply |
+| `model` | `"ivrit-turbo"` | `ivrit-turbo` or a stock size such as `tiny`, `large-v3-turbo` (needs its own folder) |
+| `model_dir` | unset | folder with `config.json` and `model.safetensors` for `model` |
+| `language` | `"he"` | `auto` or a 2-letter lowercase code |
+| `input_device` | unset (system default) | input device name; restart to apply |
+| `paste_delay_ms` | `50` | wait between setting the clipboard and pasting; restart to apply |
+| `max_record_secs` | `120` | a recording is stopped automatically after this long; restart to apply |
+| `queue_cap` | `3` | recordings kept waiting while one is transcribing; extra ones are dropped with a notice |
+
+Recordings under 300 ms and silent ones are discarded without pasting.
+
 ## Hotkey
 
 The default hotkey is **Ctrl+Space**, push-to-talk: hold to record, release to
@@ -81,3 +119,38 @@ Caveats:
   clipboard only, with a notice.
 - Ctrl+Space may already be bound (for example by an input method); pick
   another chord if so.
+
+## Known limitations
+
+- Elevated (administrator) windows on Windows do not receive the paste and
+  never deliver hotkey events.
+- Terminals paste with Ctrl+Shift+V; the text is left on the clipboard.
+- The hotkey is observed, not swallowed, so Ctrl+Space also reaches the focused
+  app (and may collide with input-method switching).
+- Pasting runs on the coordinator thread, so a very large `paste_delay_ms`
+  delays handling of other keys.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| Tray is purple / status `error` | The notification names the folders searched. Fix `model_dir`, then tray **Retry model load**. |
+| "model still loading" | The model takes several seconds to load at start. |
+| Text only on the clipboard | No focused text field, a terminal, or no `wtype`/`ydotool` on Wayland. |
+| Nothing happens on hotkey | Wayland: use compositor binds. Windows: the focused window may be elevated. |
+| Mic problems | Pick the device in **Settings**. Unplugging mid-recording gives a notice; the next press reopens the device. |
+| Another instance | `dictation is already running`; use `dictation status`. |
+
+## Manual QA checklist
+
+Record results per release. Items marked (unverified) have not been run yet.
+
+- [ ] Hold/release records and pastes in Notepad, a browser and VS Code (Windows)
+- [ ] Same on X11 and on Hyprland via binds
+- [ ] Clipboard contains the text afterwards
+- [ ] Press during transcription queues and pastes in order; the 4th rapid recording drops with a notice
+- [ ] Taps under 300 ms do nothing; silence pastes nothing
+- [ ] Unplug the mic mid-recording: notification, next press works
+- [ ] Dictating Hebrew with `language = "he"`
+- [ ] Peak VRAM and idle RAM with the bundled model (spike: about 4.0 GB VRAM peak in f32, see the plan's Task 1.3 decision)
+- [ ] Airgap: networking disabled, cold start, dictate Hebrew; firewall log shows no outbound connections from `dictation`

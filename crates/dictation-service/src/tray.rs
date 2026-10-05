@@ -9,6 +9,7 @@ use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
+use crate::config::{self, Config};
 use crate::controller::Status;
 use crate::runtime::{Runtime, RuntimeMsg};
 
@@ -61,6 +62,7 @@ struct Tray {
     icon: TrayIcon,
     status_item: MenuItem,
     pause_item: CheckMenuItem,
+    retry_item: MenuItem,
     settings_item: MenuItem,
     quit_item: MenuItem,
 }
@@ -68,12 +70,14 @@ struct Tray {
 fn build_tray() -> Result<Tray, String> {
     let status_item = MenuItem::new("Status: loading", false, None);
     let pause_item = CheckMenuItem::new("Paused", true, false, None);
+    let retry_item = MenuItem::new("Retry model load", true, None);
     let settings_item = MenuItem::new("Settings…", true, None);
     let quit_item = MenuItem::new("Quit", true, None);
     let menu = Menu::new();
     menu.append_items(&[
         &status_item,
         &pause_item,
+        &retry_item,
         &settings_item,
         &PredefinedMenuItem::separator(),
         &quit_item,
@@ -89,6 +93,7 @@ fn build_tray() -> Result<Tray, String> {
         icon,
         status_item,
         pause_item,
+        retry_item,
         settings_item,
         quit_item,
     })
@@ -141,6 +146,15 @@ pub fn run(event_loop: EventLoop<UiEvent>, runtime: Runtime) -> ! {
                 let Some(t) = &tray else { return };
                 if e.id == *t.pause_item.id() {
                     let _ = tx.send(RuntimeMsg::SetPaused(t.pause_item.is_checked()));
+                } else if e.id == *t.retry_item.id() {
+                    match Config::load_from(&config::default_path())
+                        .and_then(|c| c.validate().map(|()| c))
+                    {
+                        Ok(c) => {
+                            let _ = tx.send(RuntimeMsg::Reload(Box::new(c)));
+                        }
+                        Err(e) => notify(&format!("config problem: {e}")),
+                    }
                 } else if e.id == *t.settings_item.id() {
                     open_settings();
                 } else if e.id == *t.quit_item.id() {

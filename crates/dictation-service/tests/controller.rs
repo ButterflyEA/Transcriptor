@@ -158,3 +158,23 @@ fn status_names() {
     assert_eq!(Status::Idle.as_str(), "idle");
     assert_eq!(Status::Recording.as_str(), "recording");
 }
+
+#[test]
+fn engine_failure_keeps_error_status_and_blocks_recording() {
+    let mut c = Controller::new(3);
+    let a = c.handle(Input::EngineFailed("boom".into()));
+    assert!(has(&a, |x| matches!(x, Action::SetStatus(Status::Error))));
+    let a = c.handle(Input::Press);
+    assert!(!has(&a, |x| matches!(x, Action::StartCapture)));
+    assert!(!c.is_recording());
+}
+
+#[test]
+fn reload_after_engine_failure_recovers() {
+    let mut c = Controller::new(3);
+    c.handle(Input::EngineFailed("boom".into()));
+    c.set_loading();
+    c.handle(Input::EngineReady);
+    let a = c.handle(Input::Press);
+    assert!(has(&a, |x| matches!(x, Action::StartCapture)));
+}

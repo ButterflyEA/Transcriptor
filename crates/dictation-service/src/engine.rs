@@ -28,13 +28,15 @@ pub fn join_segments(segments: &[TranscriptionSegment]) -> String {
 }
 
 /// First directory that contains `model.safetensors`: the configured one,
-/// then `<exe_dir>/models/<model>`, then `<data_dir>/models/<model>`.
+/// then `<exe_dir>/models/<model>`, then `<data_dir>/models/<model>`, then (Linux) `/usr/share/dictation/models/<model>`.
 pub fn resolve_model_dir(
     model: &str,
     configured: Option<&Path>,
     exe_dir: &Path,
     data_dir: &Path,
 ) -> Option<PathBuf> {
+    let system =
+        cfg!(target_os = "linux").then(|| Path::new("/usr/share/dictation/models").join(model));
     configured
         .map(Path::to_path_buf)
         .into_iter()
@@ -42,6 +44,7 @@ pub fn resolve_model_dir(
             exe_dir.join("models").join(model),
             data_dir.join("models").join(model),
         ])
+        .chain(system)
         .find(|d| d.join("model.safetensors").is_file())
 }
 impl Engine {

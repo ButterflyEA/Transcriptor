@@ -41,7 +41,7 @@ impl Default for Config {
             hotkey: "ctrl+space".into(),
             model: "ivrit-turbo".into(),
             model_dir: None,
-            language: "auto".into(),
+            language: "he".into(),
             input_device: None,
             paste_delay_ms: 50,
             max_record_secs: 120,

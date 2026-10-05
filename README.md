@@ -57,6 +57,9 @@ For options, examples, output formats, model downloads and troubleshooting see
   transcription orchestration, and transcript formatting.
 - **`crates/whisper-burn-cli`** — the command-line frontend (wgpu or ndarray
   backend).
+- **`crates/dictation-service`** — an offline push-to-talk dictation service
+  (hotkey, tray, settings, bundled Hebrew model). See
+  [docs/dictation.md](docs/dictation.md).
 - **`crates/transcriptor`** — the Tauri desktop app (Rust backend, web UI).
 
 ## Fidelity
@@ -81,6 +84,7 @@ written down rather than smoothed over.
 
 ```sh
 cargo build --release -p whisper-burn-cli
+cargo build --release -p dictation-service
 cd crates/transcriptor && npm install && npm run tauri build
 ```
 
