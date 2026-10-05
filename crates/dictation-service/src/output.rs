@@ -13,6 +13,10 @@ pub enum PasteOutcome {
 
 pub trait Paster: Send {
     fn paste(&mut self, text: &str) -> Result<PasteOutcome, String>;
+    /// Puts text on the clipboard without pasting it.
+    fn set_clipboard(&mut self, _text: &str) -> Result<(), String> {
+        Err("clipboard is not supported".into())
+    }
 }
 
 pub fn is_wayland() -> bool {
@@ -128,6 +132,10 @@ impl SystemPaster {
     }
 }
 impl Paster for SystemPaster {
+    fn set_clipboard(&mut self, text: &str) -> Result<(), String> {
+        Self::set_clipboard(text)
+    }
+
     fn paste(&mut self, text: &str) -> Result<PasteOutcome, String> {
         Self::set_clipboard(text)?;
         sleep(Duration::from_millis(self.paste_delay_ms));

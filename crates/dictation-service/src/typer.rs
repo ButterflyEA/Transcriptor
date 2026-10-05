@@ -10,12 +10,19 @@ pub trait Typer: Send {
     fn backspace(&mut self, n: usize) -> Result<(), String>;
     /// False where corrections cannot be made safely (append-only mode).
     fn supports_backspace(&self) -> bool;
+    /// False for a typer that cannot type at all.
+    fn is_enabled(&self) -> bool {
+        true
+    }
 }
 
 /// A typer that refuses to type; used where streaming is not enabled.
 pub struct NullTyper;
 
 impl Typer for NullTyper {
+    fn is_enabled(&self) -> bool {
+        false
+    }
     fn type_text(&mut self, _: &str) -> Result<(), String> {
         Err("typing is not enabled".into())
     }

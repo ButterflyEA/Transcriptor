@@ -10,6 +10,8 @@ pub enum Job {
     Paste(String),
     Type(String),
     Backspace(usize),
+    /// Copies text to the clipboard without pasting.
+    SetClipboard(String),
     /// Replied to once every earlier job has run.
     Flush(Sender<()>),
 }
@@ -46,6 +48,11 @@ impl OutWorker {
                         Job::Backspace(n) => {
                             if let Err(e) = typer.backspace(n) {
                                 notify(e);
+                            }
+                        }
+                        Job::SetClipboard(text) => {
+                            if let Err(e) = paster.set_clipboard(&text) {
+                                notify(format!("clipboard failed: {e}"));
                             }
                         }
                         Job::Flush(done) => {

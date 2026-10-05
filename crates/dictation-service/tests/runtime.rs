@@ -7,7 +7,8 @@ use dictation_service::audio::{LiveTap, Recorder, Recording};
 use dictation_service::config::Config;
 use dictation_service::controller::{Input, Status};
 use dictation_service::output::{PasteOutcome, Paster};
-use dictation_service::runtime::{RuntimeMsg, spawn_with};
+use dictation_service::runtime::{RuntimeMsg, spawn_with, spawn_with_typer};
+use dictation_service::typer::Typer;
 use whisper_burn::audio::decode::decode_to_mono_f32;
 
 struct FakeRecorder(Recording);
@@ -213,4 +214,85 @@ fn stream_mode_toggles_on_press_and_still_pastes_the_batch_text() {
     wait_for(Status::Idle);
     rt.shutdown();
     assert_eq!(pasted.lock().unwrap().len(), 1);
+}
+struct LogPaster(Arc<Mutex<Vec<String>>>);
+impl Paster for LogPaster {
+    fn paste(&mut self, text: &str) -> Result<PasteOutcome, String> {
+        self.0.lock().unwrap().push(format!("paste:{text}"));
+        Ok(PasteOutcome::Pasted)
+    }
+    fn set_clipboard(&mut self, text: &str) -> Result<(), String> {
+        self.0.lock().unwrap().push(format!("clip:{text}"));
+        Ok(())
+    }
+}
+
+/// Mimics a text box: applies typed text and backspaces to a buffer.
+struct BufTyper(Arc<Mutex<String>>);
+impl Typer for BufTyper {
+    fn type_text(&mut self, s: &str) -> Result<(), String> {
+        self.0.lock().unwrap().push_str(s);
+        Ok(())
+    }
+    fn backspace(&mut self, n: usize) -> Result<(), String> {
+        let mut b = self.0.lock().unwrap();
+        for _ in 0..n {
+            b.pop();
+        }
+        Ok(())
+    }
+    fn supports_backspace(&self) -> bool {
+        true
+    }
+}
+
+/// The text box ends up holding exactly the final text, which is also on the clipboard.
+#[test]
+#[ignore]
+fn live_typing_ends_with_the_final_text_in_the_box_and_clipboard() {
+    let model_dir = PathBuf::from(std::env::var("DICTATION_MODEL_DIR").unwrap());
+    let wav = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test_16000_mono.wav");
+    let (samples, sample_rate) = decode_to_mono_f32(&wav).unwrap();
+    let cfg = Config {
+        model_dir: Some(model_dir),
+        language: "he".into(),
+        stream: true,
+        ..Config::default()
+    };
+    let (stx, srx) = mpsc::channel();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let boxed = Arc::new(Mutex::new(String::new()));
+    let rt = spawn_with_typer(
+        cfg,
+        Box::new(TapRecorder(Recording {
+            samples,
+            sample_rate,
+        })),
+        Box::new(LogPaster(log.clone())),
+        Box::new(BufTyper(boxed.clone())),
+        Box::new(move |s| {
+            let _ = stx.send(s);
+        }),
+        Box::new(|m| eprintln!("notify: {m}")),
+    );
+    let wait_for = |want: Status| loop {
+        let s = srx.recv_timeout(Duration::from_secs(120)).expect("status");
+        if s == want {
+            break;
+        }
+    };
+    wait_for(Status::Idle);
+    rt.send(Input::Press);
+    wait_for(Status::Recording);
+    std::thread::sleep(Duration::from_secs(6));
+    let mid = boxed.lock().unwrap().clone();
+    assert!(!mid.is_empty(), "nothing was typed while recording");
+    rt.send(Input::Press);
+    wait_for(Status::Transcribing);
+    wait_for(Status::Idle);
+    rt.shutdown();
+    let log = log.lock().unwrap().clone();
+    assert_eq!(log.len(), 1, "{log:?}");
+    let final_text = log[0].strip_prefix("clip:").expect("clipboard only");
+    assert_eq!(*boxed.lock().unwrap(), final_text);
 }
